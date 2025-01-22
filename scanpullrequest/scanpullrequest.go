@@ -408,12 +408,32 @@ func createNewSourceCodeRows(targetResults, sourceResults []formats.SourceCodeRo
 			targetSourceCodeVulnerabilitiesKeys.Add(row.File + row.Snippet)
 		}
 	}
+	sourceSourceCodeVulnerabilitiesKeys := datastructures.MakeSet[string]()
+	for _, row := range sourceResults {
+		if row.Fingerprint != "" {
+			sourceSourceCodeVulnerabilitiesKeys.Add(row.Fingerprint)
+		} else {
+			sourceSourceCodeVulnerabilitiesKeys.Add(row.File + row.Snippet)
+		}
+	}
 	var addedSourceCodeVulnerabilities []formats.SourceCodeRow
 	for _, row := range sourceResults {
 		if !targetSourceCodeVulnerabilitiesKeys.Exists(row.File+row.Snippet) && !targetSourceCodeVulnerabilitiesKeys.Exists(row.Fingerprint) {
 			addedSourceCodeVulnerabilities = append(addedSourceCodeVulnerabilities, row)
+		} else {
+			fmt.Println("row fingerprint : " + row.Fingerprint)
 		}
 	}
+
+	var addedTargetCodeVulnerabilities []formats.SourceCodeRow
+	for _, row := range targetResults {
+		if !sourceSourceCodeVulnerabilitiesKeys.Exists(row.File+row.Snippet) && !sourceSourceCodeVulnerabilitiesKeys.Exists(row.Fingerprint) {
+			addedTargetCodeVulnerabilities = append(addedTargetCodeVulnerabilities, row)
+		} else {
+			fmt.Println("row fingerprint : " + row.Fingerprint)
+		}
+	}
+
 	return addedSourceCodeVulnerabilities
 }
 
