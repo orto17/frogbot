@@ -14,12 +14,12 @@ func SendCommitInfo(scanDetails *ScanDetails) (err error) {
 		return
 	}
 	changedFiles, err := scanDetails.client.GetModifiedFiles(context.Background(), scanDetails.Git.PullRequestDetails.Source.Owner,
-		scanDetails.Git.PullRequestDetails.Source.Repository, latestCommit.Hash, latestCommit.ParentHashes[0])
+		scanDetails.Git.PullRequestDetails.Source.Repository, latestCommit.ParentHashes[0], latestCommit.Hash)
 	if err != nil {
 		return
 	}
 	commitInfo := services.CreateApplicationCommitInfo{
-		GitRepoUrl:     scanDetails.Git.RepositoryCloneUrl,
+		GitRepoUrl:     removeGitSuffix(scanDetails.Git.RepositoryCloneUrl),
 		CommitHash:     latestCommit.Hash,
 		ParentHash:     latestCommit.ParentHashes[0],
 		Branch:         scanDetails.Git.PullRequestDetails.Source.Name,
@@ -34,4 +34,11 @@ func SendCommitInfo(scanDetails *ScanDetails) (err error) {
 	}
 
 	return application.SendCommitInfo(scanDetails.ApplicationKey, scanDetails.ServerDetails, commitInfo)
+}
+
+func removeGitSuffix(repoURL string) string {
+	if strings.HasSuffix(repoURL, ".git") {
+		return strings.TrimSuffix(repoURL, ".git")
+	}
+	return repoURL
 }
