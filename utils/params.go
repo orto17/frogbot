@@ -500,14 +500,14 @@ func GetFrogbotDetails(commandName string) (frogbotDetails *FrogbotDetails, err 
 
 // getConfigAggregator returns a RepoAggregator based on frogbot-config.yml and environment variables.
 func getConfigAggregator(xrayVersion, xscVersion string, gitClient vcsclient.VcsClient, gitParamsFromEnv *Git, jfrogServer *coreconfig.ServerDetails, commandName string) (RepoAggregator, error) {
-	configFileContent, err := getConfigFileContent(gitClient, gitParamsFromEnv, commandName)
-	if err != nil {
-		return nil, err
-	}
-	if configFileContent != nil {
-		log.Debug(fmt.Sprintf("The content of %s that will be used is:\n%s", FrogbotConfigFile, string(configFileContent)))
-	}
-	return BuildRepoAggregator(xrayVersion, xscVersion, gitClient, configFileContent, gitParamsFromEnv, jfrogServer, commandName)
+	//configFileContent, err := getConfigFileContent(gitClient, gitParamsFromEnv, commandName)
+	//if err != nil {
+	//	return nil, err
+	//}
+	//if configFileContent != nil {
+	//	log.Debug(fmt.Sprintf("The content of %s that will be used is:\n%s", FrogbotConfigFile, string(configFileContent)))
+	//}
+	return BuildRepoAggregator(xrayVersion, xscVersion, gitClient, nil, gitParamsFromEnv, jfrogServer, commandName)
 }
 
 // getConfigFileContent retrieves the content of the frogbot-config.yml file

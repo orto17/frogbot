@@ -1,11 +1,11 @@
 - params:
     git:
-      repoName: frogbot
+      repoName: pizza-shop
       branches:
-        - dev
+        - master
     scan:
       emailReceivers:
-        - eco-system@jfrog.com
+        - saharb@jfrog.com
       projects:
         - workingDirs:
             - action

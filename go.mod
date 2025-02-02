@@ -126,7 +126,7 @@ replace github.com/jfrog/jfrog-cli-core/v2 => github.com/orto17/jfrog-cli-core/v
 
 // replace github.com/jfrog/build-info-go => github.com/jfrog/build-info-go dev
 
-replace github.com/jfrog/jfrog-client-go => github.com/orto17/jfrog-client-go v0.0.0-20250126114622-63925a9644ca
+replace github.com/jfrog/jfrog-client-go => github.com/orto17/jfrog-client-go v0.0.0-20250129075316-ab09077330be
 
 //replace github.com/jfrog/jfrog-client-go => ../jfrog-client-go //github.com/orto17/jfrog-client-go v0.0.0-20250105135705-d0d16a2c04fa
 

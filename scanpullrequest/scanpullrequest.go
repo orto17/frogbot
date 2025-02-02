@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/jfrog/frogbot/v2/utils"
 	"github.com/jfrog/frogbot/v2/utils/issues"
@@ -96,7 +97,7 @@ func scanPullRequest(repo *utils.Repository, client vcsclient.VcsClient) (err er
 	log.Info("-----------------------------------------------------------")
 
 	// Audit PR code
-	issues, resultContext, err := auditPullRequest(repo, client)
+	issues, resultContext, shouldFailPr, err := auditPullRequest(repo, client)
 	if err != nil {
 		return
 	}
@@ -116,10 +117,16 @@ func scanPullRequest(repo *utils.Repository, client vcsclient.VcsClient) (err er
 	}
 
 	// Fail the Frogbot task if a security issue is found and Frogbot isn't configured to avoid the failure.
-	if toFailTaskStatus(repo, issues) {
+	//if toFailTaskStatus(repo, issues) {
+	//	err = errors.New(SecurityIssueFoundErr)
+	//	return
+	//}
+	if shouldFailPr {
+		log.Info("Unified policy failed the PR, Frogbot finishes with error")
 		err = errors.New(SecurityIssueFoundErr)
 		return
 	}
+	log.Info("Unified policy did not fail the PR, Frogbot finishes with no error")
 	return
 }
 
@@ -129,7 +136,7 @@ func toFailTaskStatus(repo *utils.Repository, issues *issues.ScansIssuesCollecti
 }
 
 // Downloads Pull Requests branches code and audits them
-func auditPullRequest(repoConfig *utils.Repository, client vcsclient.VcsClient) (issuesCollection *issues.ScansIssuesCollection, resultContext results.ResultContext, err error) {
+func auditPullRequest(repoConfig *utils.Repository, client vcsclient.VcsClient) (issuesCollection *issues.ScansIssuesCollection, resultContext results.ResultContext, shouldFailPr bool, err error) {
 	repositoryCloneUrl, err := repoConfig.GetRepositoryHttpsCloneUrl(client)
 	if err != nil {
 		return
@@ -179,11 +186,11 @@ func auditPullRequest(repoConfig *utils.Repository, client vcsclient.VcsClient) 
 	}
 	resultContext = scanDetails.ResultContext
 
-	err = sendUnifiedPolicyEvaluationRequest(scanDetails, err)
+	shouldFailPr, err = sendUnifiedPolicyEvaluationRequest(scanDetails)
 	return
 }
 
-func sendUnifiedPolicyEvaluationRequest(scanDetails *utils.ScanDetails, err error) error {
+func sendUnifiedPolicyEvaluationRequest(scanDetails *utils.ScanDetails) (shouldFailPr bool, err error) {
 	evaluateRequest := &evaluate.EvaluateRequest{
 		Action: "application:pr",
 		Context: evaluate.Context{
@@ -197,9 +204,22 @@ func sendUnifiedPolicyEvaluationRequest(scanDetails *utils.ScanDetails, err erro
 			PullRequestId:  strconv.FormatInt(scanDetails.Git.PullRequestDetails.ID, 10),
 		},
 	}
-	// currently we will not be using the unified policy decision, as we are still running the traditional policies and watches flow.
-	_, err = unifiedpolicy.Evaluate(scanDetails.ServerDetails, evaluateRequest)
-	return err
+	resp, err := unifiedpolicy.Evaluate(scanDetails.ServerDetails, evaluateRequest)
+	shouldFailPr = false
+	if resp != nil {
+		decision := resp.Decision
+		if strings.ToLower(decision) == "deny" {
+			log.Info("Unified policy evaluation returned decision: deny")
+			shouldFailPr = true
+		} else if strings.ToLower(decision) == "error" {
+			log.Info("Unified policy evaluation returned decision: error")
+			shouldFailPr = true
+		} else {
+			log.Info("Unified policy evaluation returned decision:" + decision)
+		}
+		log.Info("Unified policy evaluation returned explanation:" + resp.Explanations)
+	}
+	return shouldFailPr, err
 }
 
 func auditPullRequestInProject(repoConfig *utils.Repository, scanDetails *utils.ScanDetails) (auditIssues *issues.ScansIssuesCollection, err error) {
