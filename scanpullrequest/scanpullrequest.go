@@ -194,7 +194,7 @@ func sendUnifiedPolicyEvaluationRequest(scanDetails *utils.ScanDetails) (shouldF
 	evaluateRequest := &evaluate.EvaluateRequest{
 		Action: "application:pr",
 		Context: evaluate.Context{
-			Stage: "development",
+			Stage: "pr stage",
 		},
 		Resource: evaluate.Resource{
 			ApplicationKey: scanDetails.ApplicationKey,
