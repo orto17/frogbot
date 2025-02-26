@@ -188,8 +188,8 @@ github.com/orto17/froggit-go v0.0.0-20250113090427-0a3d80025d0c h1:cy2uZ2sQTRxaV
 github.com/orto17/froggit-go v0.0.0-20250113090427-0a3d80025d0c/go.mod h1:5VpdQfAcbuyFl9x/x8HGm7kVk719kEtW/8YJFvKcHPA=
 github.com/orto17/jfrog-cli-core/v2 v2.0.0-20250126082512-315b857274a0 h1:2mmqMYES+MFcPM2D3ScPXk4Bt5s13tQjD829ADyhlaU=
 github.com/orto17/jfrog-cli-core/v2 v2.0.0-20250126082512-315b857274a0/go.mod h1:O3dwXwJIwJ9MaBxKIezZuI5gHrpNyL+nU6RFBQ84w2A=
-github.com/orto17/jfrog-cli-security v0.0.0-20250211174141-10565fff9190 h1:CS/6opnBoZa+K7q5i6u69gHriF06AZ6Sok/8UOkdELI=
-github.com/orto17/jfrog-cli-security v0.0.0-20250211174141-10565fff9190/go.mod h1:T3emeBNsT3lYnX/CtSZvdfqnLkwk2Idbk/esWd2fN2I=
+github.com/orto17/jfrog-cli-security v0.0.0-20250126082302-8dbc1163da61 h1:rRG5oyDxClvYqV+rs9wZ5MWS3lh9pnbbyANLtM7ZX6k=
+github.com/orto17/jfrog-cli-security v0.0.0-20250126082302-8dbc1163da61/go.mod h1:T3emeBNsT3lYnX/CtSZvdfqnLkwk2Idbk/esWd2fN2I=
 github.com/orto17/jfrog-client-go v0.0.0-20250129075316-ab09077330be h1:7TxTjpVRBOi3mj4Ss8Fw/2VH7d6PllGM9fLbv68nHEA=
 github.com/orto17/jfrog-client-go v0.0.0-20250129075316-ab09077330be/go.mod h1:2ySOMva54L3EYYIlCBYBTcTgqfrrQ19gtpA/MWfA/ec=
 github.com/owenrumney/go-sarif v1.1.1/go.mod h1:dNDiPlF04ESR/6fHlPyq7gHKmrM0sHUvAGjsoh8ZH0U=
