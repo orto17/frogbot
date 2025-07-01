@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jfrog/froggit-go/vcsutils"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,7 +12,6 @@ import (
 	"github.com/jfrog/frogbot/v2/utils"
 	"github.com/jfrog/frogbot/v2/utils/issues"
 	"github.com/jfrog/froggit-go/vcsclient"
-	"github.com/jfrog/froggit-go/vcsutils"
 	"github.com/jfrog/jfrog-cli-security/utils/formats"
 	"github.com/jfrog/jfrog-cli-security/utils/jasutils"
 	"github.com/jfrog/jfrog-cli-security/utils/results"
@@ -21,10 +21,11 @@ import (
 )
 
 const (
-	SecurityIssueFoundErr   = "issues were detected by Frogbot\n You can avoid marking the Frogbot scan as failed by setting failOnSecurityIssues to false in the " + utils.FrogbotConfigFile + " file or by setting the " + utils.FailOnSecurityIssuesEnv + " environment variable to false"
-	noGitHubEnvErr          = "frogbot did not scan this PR, because a GitHub Environment named 'frogbot' does not exist. Please refer to the Frogbot documentation for instructions on how to create the Environment"
-	noGitHubEnvReviewersErr = "frogbot did not scan this PR, because the existing GitHub Environment named 'frogbot' doesn't have reviewers selected. Please refer to the Frogbot documentation for instructions on how to create the Environment"
-	analyticsScanPrScanType = "PR"
+	SecurityIssueFoundErr          = "issues were detected by Frogbot\n You can avoid marking the Frogbot scan as failed by setting failOnSecurityIssues to false in the " + utils.FrogbotConfigFile + " file or by setting the " + utils.FailOnSecurityIssuesEnv + " environment variable to false"
+	noGitHubEnvErr                 = "frogbot did not scan this PR, because a GitHub Environment named 'frogbot' does not exist. Please refer to the Frogbot documentation for instructions on how to create the Environment"
+	noGitHubEnvReviewersErr        = "frogbot did not scan this PR, because the existing GitHub Environment named 'frogbot' doesn't have reviewers selected. Please refer to the Frogbot documentation for instructions on how to create the Environment"
+	analyticsScanPrScanType        = "PR"
+	unsupportedCommandForV3BetaErr = "frogbot v3-beta is currently not supporting scan-pr command. Please use frogbot v2 to scan pull requests.\n"
 )
 
 type ScanPullRequestCmd struct{}
