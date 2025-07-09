@@ -27,7 +27,6 @@ type ScanDetails struct {
 	client              vcsclient.VcsClient
 	fixableOnly         bool
 	disableJas          bool
-	skipAutoInstall     bool
 	minSeverityFilter   severityutils.Severity
 	baseBranch          string
 	configProfile       *clientservices.ConfigProfile
@@ -80,11 +79,6 @@ func (sc *ScanDetails) SetResultsContext(httpCloneUrl string, watches []string, 
 
 func (sc *ScanDetails) SetFixableOnly(fixable bool) *ScanDetails {
 	sc.fixableOnly = fixable
-	return sc
-}
-
-func (sc *ScanDetails) SetSkipAutoInstall(skipAutoInstall bool) *ScanDetails {
-	sc.skipAutoInstall = skipAutoInstall
 	return sc
 }
 
@@ -162,7 +156,7 @@ func (sc *ScanDetails) RunInstallAndAudit(workDirs ...string) (auditResults *res
 		SetInstallCommandName(sc.InstallCommandName).
 		SetInstallCommandArgs(sc.InstallCommandArgs).
 		SetTechnologies(sc.GetTechFromInstallCmdIfExists()).
-		SetSkipAutoInstall(sc.skipAutoInstall).
+		SetSkipAutoInstall(true).
 		SetAllowPartialResults(sc.allowPartialResults).
 		SetExclusions(sc.PathExclusions).
 		SetIsRecursiveScan(sc.IsRecursiveScan).

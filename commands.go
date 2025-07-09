@@ -19,6 +19,8 @@ import (
 	clitool "github.com/urfave/cli/v2"
 )
 
+const unsupportedCommandForV3BetaErr = "frogbot v3-beta is currently not supporting scan-pr commands. Use frogbot v2 to scan pull requests."
+
 type FrogbotCommand interface {
 	// Run the command
 	Run(config utils.RepoAggregator, client vcsclient.VcsClient, frogbotRepoConnection *utils.UrlAccessChecker) error
@@ -68,6 +70,15 @@ func GetCommands() []*clitool.Command {
 func Exec(command FrogbotCommand, commandName string) (err error) {
 	// Get frogbotDetails that contains the config, server, and VCS client
 	log.Info("Frogbot version:", utils.FrogbotVersion)
+
+	// Scan pull requests commands are currently not supported by FB V3 beta
+	if commandName == utils.ScanPullRequest || commandName == utils.ScanAllPullRequests {
+		log.Warn("-----------------------------------------------------------")
+		log.Warn(unsupportedCommandForV3BetaErr)
+		log.Warn("-----------------------------------------------------------")
+		return nil
+	}
+
 	frogbotDetails, err := utils.GetFrogbotDetails(commandName)
 	if err != nil {
 		return err

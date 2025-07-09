@@ -261,11 +261,6 @@ func (s *Scan) setDefaultsIfNeeded() (err error) {
 		}
 		s.MinSeverity = severity.String()
 	}
-	if !s.SkipAutoInstall {
-		if s.SkipAutoInstall, err = getBoolEnv(SkipAutoInstallEnv, false); err != nil {
-			return
-		}
-	}
 	if len(s.Projects) == 0 {
 		s.Projects = append(s.Projects, Project{})
 	}
@@ -275,7 +270,7 @@ func (s *Scan) setDefaultsIfNeeded() (err error) {
 		}
 	}
 	if !s.AllowPartialResults {
-		if s.AllowPartialResults, err = getBoolEnv(AllowPartialResultsEnv, false); err != nil {
+		if s.AllowPartialResults, err = getBoolEnv(AllowPartialResultsEnv, true); err != nil {
 			return
 		}
 	}
@@ -335,7 +330,6 @@ type Git struct {
 	AggregateFixes                bool     `yaml:"aggregateFixes,omitempty"`
 	PullRequestDetails            vcsclient.PullRequestInfo
 	RepositoryCloneUrl            string
-	UseLocalRepository            bool
 }
 
 func (g *Git) GetRepositoryHttpsCloneUrl(gitClient vcsclient.VcsClient) (string, error) {
@@ -433,11 +427,6 @@ func (g *Git) extractScanRepositoryEnvParams(gitParamsFromEnv *Git) (err error) 
 	}
 	if !g.AggregateFixes {
 		if g.AggregateFixes, err = getBoolEnv(GitAggregateFixesEnv, false); err != nil {
-			return
-		}
-	}
-	if !g.UseLocalRepository {
-		if g.UseLocalRepository, err = getBoolEnv(GitUseLocalRepositoryEnv, false); err != nil {
 			return
 		}
 	}

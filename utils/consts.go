@@ -40,7 +40,6 @@ const (
 	GitRepoEnv                       = "JF_GIT_REPO"
 	GitProjectEnv                    = "JF_GIT_PROJECT"
 	GitUsernameEnv                   = "JF_GIT_USERNAME"
-	GitUseLocalRepositoryEnv         = "JF_USE_LOCAL_REPOSITORY"
 	UseMostCommonAncestorAsTargetEnv = "JF_USE_MOST_COMMON_ANCESTOR_AS_TARGET"
 
 	// Git naming template environment variables
@@ -73,7 +72,6 @@ const (
 	DisableJasEnv                      = "JF_DISABLE_ADVANCED_SECURITY"
 	DetectionOnlyEnv                   = "JF_SKIP_AUTOFIX"
 	AllowedLicensesEnv                 = "JF_ALLOWED_LICENSES"
-	SkipAutoInstallEnv                 = "JF_SKIP_AUTO_INSTALL"
 	AllowPartialResultsEnv             = "JF_ALLOW_PARTIAL_RESULTS"
 	WatchesDelimiter                   = ","
 
