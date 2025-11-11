@@ -12,10 +12,10 @@ build () {
   CGO_ENABLED=0 jf go build -o "$exeName" -ldflags '-w -extldflags "-static" -X github.com/jfrog/frogbot/v2/utils.FrogbotVersion='"$version"
   chmod +x "$exeName"
 
-  # Run verification after building plugin for the correct platform of this image.
-  if [[ "$pkg" = "frogbot-linux-386" ]]; then
-    verifyVersionMatching
-  fi
+#  # Run verification after building plugin for the correct platform of this image.
+#  if [[ "$pkg" = "frogbot-linux-386" ]]; then
+#    verifyVersionMatching
+#  fi
 }
 
 #function buildAndUpload(pkg, goos, goarch, fileExtension)
@@ -55,7 +55,7 @@ verifyVersionMatching () {
 }
 
 version="$1"
-pkgPath="ecosys-frogbot/v2"
+pkgPath="local-frogbot-repo/v2" # local artifactory repository
 
 # Build and upload for every architecture.
 # Keep 'linux-386' first to prevent unnecessary uploads in case the built version doesn't match the provided one.

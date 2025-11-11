@@ -2,7 +2,7 @@
 
 FROGBOT_OS="na"
 FILE_NAME="na"
-VERSION="[RELEASE]"
+VERSION="2.0.6" # hardcoded version since release pipeline does not generate this value
 PLATFORM_URL="https://releases.jfrog.io"
 
 setFrogbotVersion() {
@@ -19,13 +19,15 @@ setFrogbotRemoteRepositoryIfNeeded() {
   if [ -n "${JF_RELEASES_REPO}" ]
   then
     PLATFORM_URL="${JF_URL%%/}"
-    REMOTE_PATH="$JF_RELEASES_REPO/artifactory/"
+    REMOTE_PATH="$JF_RELEASES_REPO/"
+    echo "Downloading Frogbot from custom Artifactory repository: ${PLATFORM_URL}/artifactory/${REMOTE_PATH}"
   fi
 }
 
 setWindowsProperties() {
   FROGBOT_OS="windows"
-  URL="${PLATFORM_URL}/artifactory/${REMOTE_PATH}frogbot/v2/${VERSION}/frogbot-windows-amd64/frogbot.exe"
+  URL="${PLATFORM_URL}/artifactory/${REMOTE_PATH}v2/${VERSION}/frogbot-windows-amd64/frogbot.exe"
+  echo "frogbot URL: " ${URL}
   FILE_NAME="frogbot.exe"
 }
 
@@ -40,7 +42,8 @@ setMacProperties() {
           ARCH="386"
           ;;
   esac
-  URL="${PLATFORM_URL}/artifactory/${REMOTE_PATH}frogbot/v2/${VERSION}/frogbot-${FROGBOT_OS}-${ARCH}/frogbot"
+  URL="${PLATFORM_URL}/artifactory/${REMOTE_PATH}v2/${VERSION}/frogbot-${FROGBOT_OS}-${ARCH}/frogbot"
+  echo "frogbot URL: " ${URL}
   FILE_NAME="frogbot"
 }
 
@@ -74,7 +77,8 @@ setLinuxProperties() {
           exit 1
           ;;
   esac
-  URL="${PLATFORM_URL}/artifactory/${REMOTE_PATH}frogbot/v2/${VERSION}/frogbot-${FROGBOT_OS}-${ARCH}/frogbot"
+  URL="${PLATFORM_URL}/artifactory/${REMOTE_PATH}v2/${VERSION}/frogbot-${FROGBOT_OS}-${ARCH}/frogbot"
+  echo "frogbot URL: " ${URL}
   FILE_NAME="frogbot"
 }
 
