@@ -1,0 +1,47 @@
+
+name: "Frogbot Security Scan"
+
+on:
+  pull_request_target:
+    types: [opened, synchronize] # Triggers scan-pr flow for every opened/updated pull request
+  push: # Triggers scan-repo flow for every push to the specified branches
+    branches:
+      - main
+  schedule:
+    - cron: "0 0 * * *"   # The repository will be scanned once a day at 00:00 GMT.
+  workflow_dispatch: # The repository will be scanned on demand
+
+permissions:
+  pull-requests: write
+  contents: write
+  security-events: write
+  # [Mandatory If using OIDC authentication protocol instead of JF_ACCESS_TOKEN]
+  # id-token: write
+
+jobs:
+  frogbot-scan:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # The repository scanning will be triggered periodically on the following branches.
+        branch: ["main"]
+    steps:
+      - name: Download and execute Frogbot script
+        env:
+          JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
+          FROGBOT_CMD: scan-repository
+          JF_URL: https://tokyoshiftleft.jfrog.io
+          JF_GIT_PROVIDER: github
+          JF_GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JF_GIT_BASE_BRANCH: ${{ matrix.branch }} 
+          JF_GIT_API_ENDPOINT: https://api.github.com/
+          JF_GIT_OWNER: orto17
+          JF_GIT_REPO: static_sca_proj_test
+          JFROG_CLI_LOG_LEVEL: DEBUG
+          JF_RELEASES_REPO: ort-virtual-frogbot
+          CI: True
+        run: |
+          curl -fLg -H "Authorization: Bearer $JF_ACCESS_TOKEN" "https://tokyoshiftleft.jfrog.io/artifactory/ort-virtual-frogbot/v2/2.0.6/getFrogbot.sh" | sh
+          ./frogbot $FROGBOT_CMD        
+      # Add additional steps as necessary
+ 
