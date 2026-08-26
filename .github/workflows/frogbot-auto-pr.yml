@@ -12,7 +12,7 @@ on:
         description: "Version to upgrade to."
         required: true
       branch-name:
-        description: "Branch to base the fix PR on. Defaults to the default branch."
+        description: "Branch to base the fix PR on. Defaults to the repository default branch."
         required: false
       commit-hash:
         description: "Exact commit the scan ran against."
@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.commit-hash || inputs.branch-name || github.ref }}
+          ref: ${{ inputs.commit-hash || inputs.branch-name || github.event.repository.default_branch }}
 
       - uses: jfrog/frogbot/autopr@v3
         env:
@@ -37,5 +37,5 @@ jobs:
           component-name: ${{ inputs.component-name }}
           affected-version: ${{ inputs.affected-version }}
           fix-version: ${{ inputs.fix-version }}
-          branch-name: ${{ inputs.branch-name }}
+          branch-name: ${{ inputs.branch-name || github.event.repository.default_branch }}
           commit-hash: ${{ inputs.commit-hash }}

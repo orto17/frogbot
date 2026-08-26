@@ -34,7 +34,9 @@ func (e *ErrAutoPrSkipped) Error() string {
 	return fmt.Sprintf("auto-pr skipped: %s", e.Reason)
 }
 
-type AutoPrCmd struct{}
+type AutoPrCmd struct {
+	branchExistsInRemote func(*utils.GitManager, string) (bool, error)
+}
 
 func (a *AutoPrCmd) Run(repository utils.Repository, client vcsclient.VcsClient) error {
 	componentName := os.Getenv(componentNameEnv)
@@ -75,7 +77,13 @@ func (a *AutoPrCmd) Run(repository utils.Repository, client vcsclient.VcsClient)
 		return fmt.Errorf("failed to generate fix branch name: %w", err)
 	}
 
-	existsInRemote, err := gitManager.BranchExistsInRemote(fixBranchName)
+	branchExistsInRemote := a.branchExistsInRemote
+	if branchExistsInRemote == nil {
+		branchExistsInRemote = func(gitManager *utils.GitManager, branchName string) (bool, error) {
+			return gitManager.BranchExistsInRemote(branchName)
+		}
+	}
+	existsInRemote, err := branchExistsInRemote(gitManager, fixBranchName)
 	if err != nil {
 		return fmt.Errorf("failed to check if fix branch '%s' exists: %w", fixBranchName, err)
 	}
@@ -89,6 +97,18 @@ func (a *AutoPrCmd) Run(repository utils.Repository, client vcsclient.VcsClient)
 	if err != nil {
 		return fmt.Errorf("failed to get current working directory: %w", err)
 	}
+	isClean, err := gitManager.IsClean()
+	if err != nil {
+		return fmt.Errorf("failed to check whether the worktree is clean: %w", err)
+	}
+	if !isClean {
+		return errors.New("auto-pr requires a clean worktree; commit, stash, or remove local changes before running it")
+	}
+	untrackedFilesBefore, err := utils.SnapshotUntrackedFiles(workspaceDir)
+	if err != nil {
+		return fmt.Errorf("failed to snapshot untracked files before dependency analysis: %w", err)
+	}
+
 	descriptorPaths, tech, isDirect, err := findDescriptorPaths(workspaceDir, componentName, affectedVersion)
 	if err != nil {
 		return err
@@ -112,8 +132,8 @@ func (a *AutoPrCmd) Run(repository utils.Repository, client vcsclient.VcsClient)
 		return err
 	}
 
-	if err = utils.CleanUntrackedFiles(workspaceDir); err != nil {
-		log.Warn(fmt.Sprintf("failed to clean untracked files from '%s': %s", workspaceDir, err.Error()))
+	if err = utils.CleanUntrackedFiles(workspaceDir, untrackedFilesBefore); err != nil {
+		return fmt.Errorf("failed to clean updater-created files from '%s': %w", workspaceDir, err)
 	}
 
 	commitMessage := gitManager.GenerateCommitMessage(componentName, fixVersion)

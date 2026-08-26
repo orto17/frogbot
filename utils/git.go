@@ -648,23 +648,39 @@ func removeCredentialsFromUrlIfNeeded(url string) string {
 	return clientutils.RemoveCredentials(url, matchedResult)
 }
 
-// CleanUntrackedFiles removes files present in the worktree but missing in the remote index,
-// so package-manager side effects don't leak into the fix commit.
-func CleanUntrackedFiles(workspaceDir string) error {
+// SnapshotUntrackedFiles returns the paths that are currently untracked in the worktree.
+func SnapshotUntrackedFiles(workspaceDir string) (map[string]struct{}, error) {
 	localRepo, err := git.PlainOpen(workspaceDir)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	worktree, err := localRepo.Worktree()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	gitStatus, err := worktree.Status()
 	if err != nil {
+		return nil, err
+	}
+
+	untrackedFiles := make(map[string]struct{})
+	for relativeFilePath, status := range gitStatus {
+		if status.Worktree == git.Untracked {
+			untrackedFiles[relativeFilePath] = struct{}{}
+		}
+	}
+	return untrackedFiles, nil
+}
+
+// CleanUntrackedFiles removes only files that became untracked after the supplied snapshot,
+// so package-manager side effects don't leak into the fix commit without deleting pre-existing work.
+func CleanUntrackedFiles(workspaceDir string, untrackedFilesBefore map[string]struct{}) error {
+	untrackedFilesAfter, err := SnapshotUntrackedFiles(workspaceDir)
+	if err != nil {
 		return err
 	}
-	for relativeFilePath, status := range gitStatus {
-		if status.Worktree != git.Untracked {
+	for relativeFilePath := range untrackedFilesAfter {
+		if _, existedBefore := untrackedFilesBefore[relativeFilePath]; existedBefore {
 			continue
 		}
 		log.Debug(fmt.Sprintf("Untracking file '%s' that was created locally during the scan/fix process", relativeFilePath))

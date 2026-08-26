@@ -1,8 +1,13 @@
 package autopr
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/jfrog/jfrog-client-go/xsc/services"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -10,6 +15,87 @@ import (
 	securitypkgupdaters "github.com/jfrog/jfrog-cli-security/remediation/sca/packageupdaters"
 	"github.com/jfrog/jfrog-cli-security/utils/techutils"
 )
+
+func TestRun_RemoteFixBranchExistsDoesNotMutateWorkspace(t *testing.T) {
+	workspaceDir := t.TempDir()
+	repo, err := git.PlainInit(workspaceDir, false)
+	require.NoError(t, err)
+	worktree, err := repo.Worktree()
+	require.NoError(t, err)
+
+	trackedPath := filepath.Join(workspaceDir, "README.md")
+	require.NoError(t, os.WriteFile(trackedPath, []byte("original"), 0o600))
+	_, err = worktree.Add("README.md")
+	require.NoError(t, err)
+	_, err = worktree.Commit("initial", &git.CommitOptions{Author: &object.Signature{Name: "test", Email: "test@example.com"}})
+	require.NoError(t, err)
+
+	untrackedPath := filepath.Join(workspaceDir, "local-notes.txt")
+	require.NoError(t, os.WriteFile(untrackedPath, []byte("keep me"), 0o600))
+	t.Chdir(workspaceDir)
+	t.Setenv(componentNameEnv, "example")
+	t.Setenv(affectedVersionEnv, "1.0.0")
+	t.Setenv(fixVersionEnv, "1.0.1")
+
+	cmd := &AutoPrCmd{
+		branchExistsInRemote: func(_ *utils.GitManager, _ string) (bool, error) {
+			return true, nil
+		},
+	}
+	repository := utils.Repository{Params: utils.Params{
+		ConfigProfile: &services.ConfigProfile{},
+		Git:           utils.Git{Branches: []string{"master"}},
+	}}
+
+	err = cmd.Run(repository, nil)
+	var skipped *ErrAutoPrSkipped
+	require.ErrorAs(t, err, &skipped)
+
+	contents, readErr := os.ReadFile(untrackedPath)
+	require.NoError(t, readErr)
+	assert.Equal(t, "keep me", string(contents))
+	head, headErr := repo.Head()
+	require.NoError(t, headErr)
+	assert.Equal(t, "master", head.Name().Short())
+}
+
+func TestRun_DirtyWorktreeFailsBeforeDependencyAnalysis(t *testing.T) {
+	workspaceDir := t.TempDir()
+	repo, err := git.PlainInit(workspaceDir, false)
+	require.NoError(t, err)
+	worktree, err := repo.Worktree()
+	require.NoError(t, err)
+
+	trackedPath := filepath.Join(workspaceDir, "README.md")
+	require.NoError(t, os.WriteFile(trackedPath, []byte("original"), 0o600))
+	_, err = worktree.Add("README.md")
+	require.NoError(t, err)
+	_, err = worktree.Commit("initial", &git.CommitOptions{Author: &object.Signature{Name: "test", Email: "test@example.com"}})
+	require.NoError(t, err)
+
+	untrackedPath := filepath.Join(workspaceDir, "local-notes.txt")
+	require.NoError(t, os.WriteFile(untrackedPath, []byte("keep me"), 0o600))
+	t.Chdir(workspaceDir)
+	t.Setenv(componentNameEnv, "example")
+	t.Setenv(affectedVersionEnv, "1.0.0")
+	t.Setenv(fixVersionEnv, "1.0.1")
+
+	cmd := &AutoPrCmd{
+		branchExistsInRemote: func(_ *utils.GitManager, _ string) (bool, error) {
+			return false, nil
+		},
+	}
+	repository := utils.Repository{Params: utils.Params{
+		ConfigProfile: &services.ConfigProfile{},
+		Git:           utils.Git{Branches: []string{"master"}},
+	}}
+
+	err = cmd.Run(repository, nil)
+	require.EqualError(t, err, "auto-pr requires a clean worktree; commit, stash, or remove local changes before running it")
+	contents, readErr := os.ReadFile(untrackedPath)
+	require.NoError(t, readErr)
+	assert.Equal(t, "keep me", string(contents))
+}
 
 func TestValidateInputs(t *testing.T) {
 	tests := []struct {

@@ -407,7 +407,9 @@ func (sr *ScanRepositoryCmd) openAggregatedPullRequest(repository *utils.Reposit
 }
 
 func (sr *ScanRepositoryCmd) cleanNewFilesMissingInRemote() error {
-	return utils.CleanUntrackedFiles(sr.baseWd)
+	// Scan-repository operates in a disposable clone, so every untracked file in this
+	// workspace was created by the scan or package updater.
+	return utils.CleanUntrackedFiles(sr.baseWd, nil)
 }
 
 func (sr *ScanRepositoryCmd) preparePullRequestDetails(aggregateFixes bool, resultsPlatformURL string, vulnerabilitiesDetails ...*utils.VulnerabilityDetails) (prTitle, prBody string, otherComments []string, err error) {

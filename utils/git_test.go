@@ -15,7 +15,39 @@ import (
 	"github.com/jfrog/jfrog-client-go/utils/io/fileutils"
 	"github.com/jfrog/jfrog-client-go/utils/tests"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestCleanUntrackedFiles_RemovesOnlyFilesCreatedAfterSnapshot(t *testing.T) {
+	workspaceDir := t.TempDir()
+	repo, err := git.PlainInit(workspaceDir, false)
+	require.NoError(t, err)
+	worktree, err := repo.Worktree()
+	require.NoError(t, err)
+
+	trackedPath := filepath.Join(workspaceDir, "tracked.txt")
+	require.NoError(t, os.WriteFile(trackedPath, []byte("tracked"), 0o600))
+	_, err = worktree.Add("tracked.txt")
+	require.NoError(t, err)
+	_, err = worktree.Commit("initial", &git.CommitOptions{
+		Author: &object.Signature{Name: "test", Email: "test@example.com"},
+	})
+	require.NoError(t, err)
+
+	existingPath := filepath.Join(workspaceDir, "existing.txt")
+	require.NoError(t, os.WriteFile(existingPath, []byte("preserve"), 0o600))
+	untrackedBefore, err := SnapshotUntrackedFiles(workspaceDir)
+	require.NoError(t, err)
+
+	createdPath := filepath.Join(workspaceDir, "created.txt")
+	require.NoError(t, os.WriteFile(createdPath, []byte("remove"), 0o600))
+	require.NoError(t, CleanUntrackedFiles(workspaceDir, untrackedBefore))
+
+	_, err = os.Stat(existingPath)
+	assert.NoError(t, err)
+	_, err = os.Stat(createdPath)
+	assert.True(t, os.IsNotExist(err))
+}
 
 func TestGitManager_GenerateCommitMessage(t *testing.T) {
 	testCases := []struct {

@@ -72,7 +72,7 @@ export class Utils {
             if (!gitToken) {
                 throw new Error(
                     'Git token not found. Please ensure GITHUB_TOKEN is available by setting permissions in your workflow, ' +
-                    'or set JF_GIT_TOKEN manually.'
+                        'or set JF_GIT_TOKEN manually.',
                 );
             }
             core.exportVariable('JF_GIT_TOKEN', gitToken);
@@ -311,9 +311,7 @@ export class Utils {
             throw new Error(`${JSON.stringify(responseJson.errors)}`);
         }
         if (responseJson.error) {
-            throw new Error(
-                `${responseJson.error}${responseJson.error_description ? ': ' + responseJson.error_description : ''}`,
-            );
+            throw new Error(`${responseJson.error}${responseJson.error_description ? ': ' + responseJson.error_description : ''}`);
         }
         if (!responseJson.access_token) {
             throw new Error(`Token exchange response is missing access_token. Full response: ${responseString}`);
