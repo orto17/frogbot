@@ -24,7 +24,8 @@ func makeComponent(purl string, locations ...string) cyclonedx.Component {
 }
 
 // bomWithDirect wraps components under a root application component and marks the named refs as its direct deps.
-func bomWithDirect(rootRef string, directRefs []string, components []cyclonedx.Component) *cyclonedx.BOM {
+func bomWithDirect(directRefs []string, components []cyclonedx.Component) *cyclonedx.BOM {
+	const rootRef = "root"
 	deps := []cyclonedx.Dependency{{Ref: rootRef, Dependencies: &directRefs}}
 	return &cyclonedx.BOM{
 		Metadata:     &cyclonedx.Metadata{Component: &cyclonedx.Component{Type: cyclonedx.ComponentTypeApplication, BOMRef: rootRef}},
@@ -46,7 +47,7 @@ func TestExtractComponentMatch(t *testing.T) {
 	}{
 		{
 			name: "maven match",
-			sbom: bomWithDirect("root", []string{"pkg:maven/com.example/lib@1.0.0"}, []cyclonedx.Component{
+			sbom: bomWithDirect([]string{"pkg:maven/com.example/lib@1.0.0"}, []cyclonedx.Component{
 				makeComponent("pkg:maven/com.example/lib@1.0.0", "pom.xml"),
 				makeComponent("pkg:maven/com.example/other@2.0.0", "other/pom.xml"),
 			}),
@@ -58,7 +59,7 @@ func TestExtractComponentMatch(t *testing.T) {
 		},
 		{
 			name: "npm match",
-			sbom: bomWithDirect("root", []string{"pkg:npm/lodash@4.17.20"}, []cyclonedx.Component{
+			sbom: bomWithDirect([]string{"pkg:npm/lodash@4.17.20"}, []cyclonedx.Component{
 				makeComponent("pkg:npm/lodash@4.17.20", "package.json"),
 			}),
 			componentName:   "lodash",
@@ -69,7 +70,7 @@ func TestExtractComponentMatch(t *testing.T) {
 		},
 		{
 			name: "golang match",
-			sbom: bomWithDirect("root", []string{"pkg:golang/github.com/foo/bar@v1.2.3"}, []cyclonedx.Component{
+			sbom: bomWithDirect([]string{"pkg:golang/github.com/foo/bar@v1.2.3"}, []cyclonedx.Component{
 				makeComponent("pkg:golang/github.com/foo/bar@v1.2.3", "go.mod"),
 			}),
 			componentName:   "github.com/foo/bar",
@@ -80,7 +81,7 @@ func TestExtractComponentMatch(t *testing.T) {
 		},
 		{
 			name: "transitive component",
-			sbom: bomWithDirect("root", []string{"other"}, []cyclonedx.Component{
+			sbom: bomWithDirect([]string{"other"}, []cyclonedx.Component{
 				makeComponent("pkg:maven/com.example/lib@1.0.0", "pom.xml"),
 			}),
 			componentName:   "com.example/lib",
@@ -91,7 +92,7 @@ func TestExtractComponentMatch(t *testing.T) {
 		},
 		{
 			name: "component not found",
-			sbom: bomWithDirect("root", []string{}, []cyclonedx.Component{
+			sbom: bomWithDirect([]string{}, []cyclonedx.Component{
 				makeComponent("pkg:maven/com.example/lib@1.0.0", "pom.xml"),
 			}),
 			componentName:   "com.example/other",
@@ -99,7 +100,7 @@ func TestExtractComponentMatch(t *testing.T) {
 		},
 		{
 			name: "wrong version",
-			sbom: bomWithDirect("root", []string{}, []cyclonedx.Component{
+			sbom: bomWithDirect([]string{}, []cyclonedx.Component{
 				makeComponent("pkg:maven/com.example/lib@1.0.0", "pom.xml"),
 			}),
 			componentName:   "com.example/lib",
@@ -113,7 +114,7 @@ func TestExtractComponentMatch(t *testing.T) {
 		},
 		{
 			name: "duplicate locations deduplicated",
-			sbom: bomWithDirect("root", []string{"pkg:maven/com.example/lib@1.0.0"}, []cyclonedx.Component{
+			sbom: bomWithDirect([]string{"pkg:maven/com.example/lib@1.0.0"}, []cyclonedx.Component{
 				makeComponent("pkg:maven/com.example/lib@1.0.0", "pom.xml", "pom.xml"),
 			}),
 			componentName:   "com.example/lib",
@@ -124,7 +125,7 @@ func TestExtractComponentMatch(t *testing.T) {
 		},
 		{
 			name: "maven colon vs slash",
-			sbom: bomWithDirect("root", []string{"pkg:maven/com.example/lib@1.0.0"}, []cyclonedx.Component{
+			sbom: bomWithDirect([]string{"pkg:maven/com.example/lib@1.0.0"}, []cyclonedx.Component{
 				makeComponent("pkg:maven/com.example/lib@1.0.0", "pom.xml"),
 			}),
 			componentName:   "com.example:lib",
@@ -135,7 +136,7 @@ func TestExtractComponentMatch(t *testing.T) {
 		},
 		{
 			name: "pip name normalization",
-			sbom: bomWithDirect("root", []string{"pkg:pypi/Py_JWT@2.0.0"}, []cyclonedx.Component{
+			sbom: bomWithDirect([]string{"pkg:pypi/Py_JWT@2.0.0"}, []cyclonedx.Component{
 				makeComponent("pkg:pypi/Py_JWT@2.0.0", "requirements.txt"),
 			}),
 			componentName:   "py.jwt",
