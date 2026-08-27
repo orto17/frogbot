@@ -88,12 +88,23 @@ func Exec(command FrogbotCommand, commandName string) (err error) {
 	log.Info(fmt.Sprintf("Running Frogbot %q command", commandName))
 	err = command.Run(frogbotDetails.Repository, frogbotDetails.GitClient)
 
-	if err != nil {
+	switch {
+	case shouldReportError(err):
 		if reportError := xsc.ReportError(frogbotDetails.XrayVersion, frogbotDetails.XscVersion, frogbotDetails.ServerDetails, err, "frogbot", frogbotDetails.Repository.JFrogProjectKey); reportError != nil {
 			log.Debug(reportError)
 		}
-	} else {
+	case err != nil:
+		log.Info(err.Error())
+	default:
 		log.Info(fmt.Sprintf("Frogbot %q command finished successfully", commandName))
 	}
 	return err
+}
+
+func shouldReportError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var skipped *autopr.ErrAutoPrSkipped
+	return !errors.As(err, &skipped)
 }

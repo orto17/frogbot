@@ -16,6 +16,170 @@ import (
 	"github.com/jfrog/jfrog-cli-security/utils/techutils"
 )
 
+type fakeAutoPrGitManager struct {
+	calls            []string
+	branchExists     bool
+	clean            bool
+	fixBranchName    string
+	commitMessage    string
+	pullRequestTitle string
+}
+
+func (f *fakeAutoPrGitManager) GenerateFixBranchName(_, _, _ string) (string, error) {
+	f.calls = append(f.calls, "generate-branch")
+	return f.fixBranchName, nil
+}
+
+func (f *fakeAutoPrGitManager) BranchExistsInRemote(string) (bool, error) {
+	f.calls = append(f.calls, "check-remote")
+	return f.branchExists, nil
+}
+
+func (f *fakeAutoPrGitManager) IsClean() (bool, error) {
+	f.calls = append(f.calls, "check-clean")
+	return f.clean, nil
+}
+
+func (f *fakeAutoPrGitManager) CreateBranchAndCheckout(string, bool) error {
+	f.calls = append(f.calls, "create-branch")
+	return nil
+}
+
+func (f *fakeAutoPrGitManager) GenerateCommitMessage(_, _ string) string {
+	return f.commitMessage
+}
+
+func (f *fakeAutoPrGitManager) AddAllAndCommit(_, _ string) error {
+	f.calls = append(f.calls, "commit")
+	return nil
+}
+
+func (f *fakeAutoPrGitManager) Push(bool, string) error {
+	f.calls = append(f.calls, "push")
+	return nil
+}
+
+func (f *fakeAutoPrGitManager) GeneratePullRequestTitle(_, _ string) string {
+	return f.pullRequestTitle
+}
+
+func TestRun_HappyPathUpdatesManifestAndLockAndCleansOnlyGeneratedFiles(t *testing.T) {
+	workspaceDir := createCleanTestRepository(t, map[string]string{
+		"package.json":      `{"dependencies":{"example":"1.0.0"}}`,
+		"package-lock.json": `{"packages":{}}`,
+	})
+	t.Chdir(workspaceDir)
+	setAutoPrInputs(t)
+
+	gitManager := &fakeAutoPrGitManager{
+		clean:            true,
+		fixBranchName:    "frogbot-example-fix",
+		commitMessage:    "Upgrade example to 1.0.1",
+		pullRequestTitle: "Upgrade example",
+	}
+	pullRequestCreated := false
+	cmd := &AutoPrCmd{
+		newGitManager: func(utils.Repository) (autoPrGitManager, error) {
+			return gitManager, nil
+		},
+		findDescriptorPaths: func(_, _, _ string) ([]string, techutils.Technology, bool, error) {
+			return []string{"package.json"}, techutils.Npm, true, nil
+		},
+		runUpdater: func(_, _, _ string, _ techutils.Technology, _ bool, _ []string) error {
+			require.NoError(t, os.WriteFile(filepath.Join(workspaceDir, "package.json"), []byte("manifest changed"), 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(workspaceDir, "package-lock.json"), []byte("lock changed"), 0o600))
+			return os.WriteFile(filepath.Join(workspaceDir, "updater.tmp"), []byte("remove"), 0o600)
+		},
+		createPullRequest: func(utils.Repository, string, string, string, string) error {
+			pullRequestCreated = true
+			return nil
+		},
+	}
+	repository := testAutoPrRepository()
+
+	require.NoError(t, cmd.Run(repository, nil))
+	assert.Equal(t, "manifest changed", readTestFile(t, filepath.Join(workspaceDir, "package.json")))
+	assert.Equal(t, "lock changed", readTestFile(t, filepath.Join(workspaceDir, "package-lock.json")))
+	_, err := os.Stat(filepath.Join(workspaceDir, "updater.tmp"))
+	assert.True(t, os.IsNotExist(err))
+	assert.True(t, pullRequestCreated)
+	assert.Equal(t, []string{"generate-branch", "check-remote", "check-clean", "create-branch", "commit", "push"}, gitManager.calls)
+}
+
+func TestRun_ComponentBranches(t *testing.T) {
+	tests := []struct {
+		name     string
+		paths    []string
+		direct   bool
+		wantSkip bool
+		wantErr  string
+	}{
+		{name: "component not found", wantSkip: true},
+		{name: "transitive dependency", paths: []string{"package.json"}, wantErr: "transitive dependency"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			workspaceDir := createCleanTestRepository(t, map[string]string{"package.json": "{}"})
+			t.Chdir(workspaceDir)
+			setAutoPrInputs(t)
+			gitManager := &fakeAutoPrGitManager{clean: true, fixBranchName: "fix"}
+			cmd := &AutoPrCmd{
+				newGitManager: func(utils.Repository) (autoPrGitManager, error) { return gitManager, nil },
+				findDescriptorPaths: func(_, _, _ string) ([]string, techutils.Technology, bool, error) {
+					return tc.paths, techutils.Npm, tc.direct, nil
+				},
+			}
+
+			err := cmd.Run(testAutoPrRepository(), nil)
+			if tc.wantSkip {
+				var skipped *ErrAutoPrSkipped
+				require.ErrorAs(t, err, &skipped)
+			} else {
+				require.ErrorContains(t, err, tc.wantErr)
+			}
+			assert.NotContains(t, gitManager.calls, "create-branch")
+		})
+	}
+}
+
+func createCleanTestRepository(t *testing.T, files map[string]string) string {
+	t.Helper()
+	workspaceDir := t.TempDir()
+	repo, err := git.PlainInit(workspaceDir, false)
+	require.NoError(t, err)
+	worktree, err := repo.Worktree()
+	require.NoError(t, err)
+	for name, contents := range files {
+		require.NoError(t, os.WriteFile(filepath.Join(workspaceDir, name), []byte(contents), 0o600))
+		_, err = worktree.Add(name)
+		require.NoError(t, err)
+	}
+	_, err = worktree.Commit("initial", &git.CommitOptions{Author: &object.Signature{Name: "test", Email: "test@example.com"}})
+	require.NoError(t, err)
+	return workspaceDir
+}
+
+func setAutoPrInputs(t *testing.T) {
+	t.Helper()
+	t.Setenv(componentNameEnv, "example")
+	t.Setenv(affectedVersionEnv, "1.0.0")
+	t.Setenv(fixVersionEnv, "1.0.1")
+}
+
+func testAutoPrRepository() utils.Repository {
+	return utils.Repository{Params: utils.Params{
+		ConfigProfile: &services.ConfigProfile{},
+		Git:           utils.Git{RepoOwner: "owner", RepoName: "repo", Branches: []string{"master"}},
+	}}
+}
+
+func readTestFile(t *testing.T, path string) string {
+	t.Helper()
+	contents, err := os.ReadFile(path)
+	require.NoError(t, err)
+	return string(contents)
+}
+
 func TestRun_RemoteFixBranchExistsDoesNotMutateWorkspace(t *testing.T) {
 	workspaceDir := t.TempDir()
 	repo, err := git.PlainInit(workspaceDir, false)
@@ -37,11 +201,9 @@ func TestRun_RemoteFixBranchExistsDoesNotMutateWorkspace(t *testing.T) {
 	t.Setenv(affectedVersionEnv, "1.0.0")
 	t.Setenv(fixVersionEnv, "1.0.1")
 
-	cmd := &AutoPrCmd{
-		branchExistsInRemote: func(_ *utils.GitManager, _ string) (bool, error) {
-			return true, nil
-		},
-	}
+	cmd := &AutoPrCmd{newGitManager: func(utils.Repository) (autoPrGitManager, error) {
+		return &fakeAutoPrGitManager{branchExists: true, fixBranchName: "fix"}, nil
+	}}
 	repository := utils.Repository{Params: utils.Params{
 		ConfigProfile: &services.ConfigProfile{},
 		Git:           utils.Git{Branches: []string{"master"}},
@@ -80,11 +242,9 @@ func TestRun_DirtyWorktreeFailsBeforeDependencyAnalysis(t *testing.T) {
 	t.Setenv(affectedVersionEnv, "1.0.0")
 	t.Setenv(fixVersionEnv, "1.0.1")
 
-	cmd := &AutoPrCmd{
-		branchExistsInRemote: func(_ *utils.GitManager, _ string) (bool, error) {
-			return false, nil
-		},
-	}
+	cmd := &AutoPrCmd{newGitManager: func(utils.Repository) (autoPrGitManager, error) {
+		return &fakeAutoPrGitManager{clean: false, fixBranchName: "fix"}, nil
+	}}
 	repository := utils.Repository{Params: utils.Params{
 		ConfigProfile: &services.ConfigProfile{},
 		Git:           utils.Git{Branches: []string{"master"}},

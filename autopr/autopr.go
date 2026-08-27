@@ -34,66 +34,97 @@ func (e *ErrAutoPrSkipped) Error() string {
 	return fmt.Sprintf("auto-pr skipped: %s", e.Reason)
 }
 
+type autoPrGitManager interface {
+	GenerateFixBranchName(string, string, string) (string, error)
+	BranchExistsInRemote(string) (bool, error)
+	IsClean() (bool, error)
+	CreateBranchAndCheckout(string, bool) error
+	GenerateCommitMessage(string, string) string
+	AddAllAndCommit(string, string) error
+	Push(bool, string) error
+	GeneratePullRequestTitle(string, string) string
+}
+
 type AutoPrCmd struct {
-	branchExistsInRemote func(*utils.GitManager, string) (bool, error)
+	newGitManager       func(utils.Repository) (autoPrGitManager, error)
+	findDescriptorPaths func(string, string, string) ([]string, techutils.Technology, bool, error)
+	runUpdater          func(string, string, string, techutils.Technology, bool, []string) error
+	createPullRequest   func(utils.Repository, string, string, string, string) error
+}
+
+type autoPrRun struct {
+	componentName        string
+	affectedVersion      string
+	fixVersion           string
+	baseBranch           string
+	fixBranchName        string
+	workspaceDir         string
+	descriptorPaths      []string
+	tech                 techutils.Technology
+	untrackedFilesBefore map[string]struct{}
 }
 
 func (a *AutoPrCmd) Run(repository utils.Repository, client vcsclient.VcsClient) error {
-	componentName := os.Getenv(componentNameEnv)
-	affectedVersion := os.Getenv(affectedVersionEnv)
-	fixVersion := os.Getenv(fixVersionEnv)
-
-	if err := validateInputs(componentName, affectedVersion, fixVersion); err != nil {
+	run := autoPrRun{
+		componentName:   os.Getenv(componentNameEnv),
+		affectedVersion: os.Getenv(affectedVersionEnv),
+		fixVersion:      os.Getenv(fixVersionEnv),
+		baseBranch:      repository.Params.Git.Branches[0],
+	}
+	if err := validateInputs(run.componentName, run.affectedVersion, run.fixVersion); err != nil {
 		return err
 	}
-
 	log.Info(fmt.Sprintf("Starting auto-pr for component '%s' (%s → %s) in %s/%s",
-		componentName, affectedVersion, fixVersion,
+		run.componentName, run.affectedVersion, run.fixVersion,
 		repository.Params.Git.RepoOwner, repository.Params.Git.RepoName))
 
-	// Base branch is validated by getconfiguration.setDefaultsIfNeeded before Run is invoked.
-	baseBranch := repository.Params.Git.Branches[0]
+	gitManager, err := a.initializeGitManager(repository)
+	if err != nil {
+		return err
+	}
+	if err = a.prepareRun(&run, gitManager); err != nil {
+		return err
+	}
+	return a.applyFixAndCreatePullRequest(run, repository, client, gitManager)
+}
 
+func (a *AutoPrCmd) initializeGitManager(repository utils.Repository) (autoPrGitManager, error) {
+	if a.newGitManager != nil {
+		return a.newGitManager(repository)
+	}
 	gitManager, err := utils.NewGitManager().
 		SetAuth(repository.Params.Git.Username, repository.Params.Git.Token).
 		SetLocalRepositoryAndRemoteName()
 	if err != nil {
-		return fmt.Errorf("failed to initialize git manager: %w", err)
+		return nil, fmt.Errorf("failed to initialize git manager: %w", err)
 	}
-	gitManager = gitManager.SetGitParams(&repository.Params.Git)
-
 	customTemplates, err := utils.LoadCustomTemplates(
 		repository.ConfigProfile.FrogbotConfig.CommitMessageTemplate,
 		repository.ConfigProfile.FrogbotConfig.BranchNameTemplate,
 		repository.ConfigProfile.FrogbotConfig.PrTitleTemplate,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to load custom templates: %w", err)
+		return nil, fmt.Errorf("failed to load custom templates: %w", err)
 	}
-	gitManager = gitManager.SetCustomTemplates(customTemplates)
+	return gitManager.SetGitParams(&repository.Params.Git).SetCustomTemplates(customTemplates), nil
+}
 
-	fixBranchName, err := gitManager.GenerateFixBranchName(baseBranch, componentName, fixVersion)
+func (a *AutoPrCmd) prepareRun(run *autoPrRun, gitManager autoPrGitManager) error {
+	var err error
+	run.fixBranchName, err = gitManager.GenerateFixBranchName(run.baseBranch, run.componentName, run.fixVersion)
 	if err != nil {
 		return fmt.Errorf("failed to generate fix branch name: %w", err)
 	}
-
-	branchExistsInRemote := a.branchExistsInRemote
-	if branchExistsInRemote == nil {
-		branchExistsInRemote = func(gitManager *utils.GitManager, branchName string) (bool, error) {
-			return gitManager.BranchExistsInRemote(branchName)
-		}
-	}
-	existsInRemote, err := branchExistsInRemote(gitManager, fixBranchName)
+	existsInRemote, err := gitManager.BranchExistsInRemote(run.fixBranchName)
 	if err != nil {
-		return fmt.Errorf("failed to check if fix branch '%s' exists: %w", fixBranchName, err)
+		return fmt.Errorf("failed to check if fix branch '%s' exists: %w", run.fixBranchName, err)
 	}
 	if existsInRemote {
 		return &ErrAutoPrSkipped{Reason: fmt.Sprintf(
 			"a fix branch '%s' already exists for '%s' to version '%s'. If the pull request was previously closed, delete the fix branch to allow a new one to be created.",
-			fixBranchName, componentName, fixVersion)}
+			run.fixBranchName, run.componentName, run.fixVersion)}
 	}
-
-	workspaceDir, err := os.Getwd()
+	run.workspaceDir, err = os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current working directory: %w", err)
 	}
@@ -104,40 +135,47 @@ func (a *AutoPrCmd) Run(repository utils.Repository, client vcsclient.VcsClient)
 	if !isClean {
 		return errors.New("auto-pr requires a clean worktree; commit, stash, or remove local changes before running it")
 	}
-	untrackedFilesBefore, err := utils.SnapshotUntrackedFiles(workspaceDir)
+	run.untrackedFilesBefore, err = utils.SnapshotUntrackedFiles(run.workspaceDir)
 	if err != nil {
 		return fmt.Errorf("failed to snapshot untracked files before dependency analysis: %w", err)
 	}
-
-	descriptorPaths, tech, isDirect, err := findDescriptorPaths(workspaceDir, componentName, affectedVersion)
+	locate := a.findDescriptorPaths
+	if locate == nil {
+		locate = findDescriptorPaths
+	}
+	var isDirect bool
+	run.descriptorPaths, run.tech, isDirect, err = locate(run.workspaceDir, run.componentName, run.affectedVersion)
 	if err != nil {
 		return err
 	}
-	if len(descriptorPaths) == 0 {
-		return &ErrAutoPrSkipped{Reason: fmt.Sprintf("component '%s@%s' was not found in the project dependency tree", componentName, affectedVersion)}
+	if len(run.descriptorPaths) == 0 {
+		return &ErrAutoPrSkipped{Reason: fmt.Sprintf("component '%s@%s' was not found in the project dependency tree", run.componentName, run.affectedVersion)}
 	}
-	if tech == techutils.NoTech {
-		return fmt.Errorf("could not determine package manager for component '%s@%s'", componentName, affectedVersion)
+	if run.tech == techutils.NoTech {
+		return fmt.Errorf("could not determine package manager for component '%s@%s'", run.componentName, run.affectedVersion)
 	}
 	if !isDirect {
-		// Updaters generally cannot fix transitive dependencies via a simple manifest change.
-		return fmt.Errorf("component '%s@%s' is a transitive dependency; auto-pr only supports direct dependencies", componentName, affectedVersion)
+		return fmt.Errorf("component '%s@%s' is a transitive dependency; auto-pr only supports direct dependencies", run.componentName, run.affectedVersion)
 	}
+	return nil
+}
 
-	if err = gitManager.CreateBranchAndCheckout(fixBranchName, false); err != nil {
-		return fmt.Errorf("failed to create fix branch '%s': %w", fixBranchName, err)
+func (a *AutoPrCmd) applyFixAndCreatePullRequest(run autoPrRun, repository utils.Repository, client vcsclient.VcsClient, gitManager autoPrGitManager) error {
+	if err := gitManager.CreateBranchAndCheckout(run.fixBranchName, false); err != nil {
+		return fmt.Errorf("failed to create fix branch '%s': %w", run.fixBranchName, err)
 	}
-
-	if err = runUpdater(componentName, affectedVersion, fixVersion, tech, isDirect, descriptorPaths); err != nil {
+	update := a.runUpdater
+	if update == nil {
+		update = runUpdater
+	}
+	if err := update(run.componentName, run.affectedVersion, run.fixVersion, run.tech, true, run.descriptorPaths); err != nil {
 		return err
 	}
-
-	if err = utils.CleanUntrackedFiles(workspaceDir, untrackedFilesBefore); err != nil {
-		return fmt.Errorf("failed to clean updater-created files from '%s': %w", workspaceDir, err)
+	if err := utils.CleanUntrackedFiles(run.workspaceDir, run.untrackedFilesBefore); err != nil {
+		return fmt.Errorf("failed to clean updater-created files from '%s': %w", run.workspaceDir, err)
 	}
-
-	commitMessage := gitManager.GenerateCommitMessage(componentName, fixVersion)
-	if err = gitManager.AddAllAndCommit(commitMessage, componentName); err != nil {
+	commitMessage := gitManager.GenerateCommitMessage(run.componentName, run.fixVersion)
+	if err := gitManager.AddAllAndCommit(commitMessage, run.componentName); err != nil {
 		var errNoChanges *utils.ErrNothingToCommit
 		if errors.As(err, &errNoChanges) {
 			log.Info(err.Error())
@@ -145,21 +183,23 @@ func (a *AutoPrCmd) Run(repository utils.Repository, client vcsclient.VcsClient)
 		}
 		return fmt.Errorf("failed to commit changes: %w", err)
 	}
-
-	if err = gitManager.Push(false, fixBranchName); err != nil {
-		return fmt.Errorf("failed to push branch '%s': %w", fixBranchName, err)
+	if err := gitManager.Push(false, run.fixBranchName); err != nil {
+		return fmt.Errorf("failed to push branch '%s': %w", run.fixBranchName, err)
 	}
-	log.Info(fmt.Sprintf("Branch '%s' pushed to origin", fixBranchName))
+	log.Info(fmt.Sprintf("Branch '%s' pushed to origin", run.fixBranchName))
 
-	prTitle := gitManager.GeneratePullRequestTitle(componentName, fixVersion)
-	prBody := buildPRBody(repository, componentName, affectedVersion, fixVersion, tech, descriptorPaths)
-	log.Info(fmt.Sprintf("Creating pull request from '%s' to '%s'", fixBranchName, baseBranch))
-	if err = client.CreatePullRequest(context.Background(),
+	prTitle := gitManager.GeneratePullRequestTitle(run.componentName, run.fixVersion)
+	prBody := buildPRBody(repository, run.componentName, run.affectedVersion, run.fixVersion, run.tech, run.descriptorPaths)
+	log.Info(fmt.Sprintf("Creating pull request from '%s' to '%s'", run.fixBranchName, run.baseBranch))
+	if a.createPullRequest != nil {
+		if err := a.createPullRequest(repository, run.fixBranchName, run.baseBranch, prTitle, prBody); err != nil {
+			return fmt.Errorf("failed to create pull request: %w", err)
+		}
+	} else if err := client.CreatePullRequest(context.Background(),
 		repository.Params.Git.RepoOwner, repository.Params.Git.RepoName,
-		fixBranchName, baseBranch, prTitle, prBody); err != nil {
+		run.fixBranchName, run.baseBranch, prTitle, prBody); err != nil {
 		return fmt.Errorf("failed to create pull request: %w", err)
 	}
-
 	log.Info("Pull request created successfully")
 	return nil
 }
@@ -197,10 +237,6 @@ func runUpdater(componentName, affectedVersion, fixVersion string, tech techutil
 }
 
 func buildFixDetails(componentName, affectedVersion, fixVersion string, tech techutils.Technology, isDirect bool, descriptorPaths []string) *securitypkgupdaters.FixDetails {
-	evidences := make([]formats.Location, len(descriptorPaths))
-	for i, path := range descriptorPaths {
-		evidences[i] = formats.Location{File: path}
-	}
 	return &securitypkgupdaters.FixDetails{
 		ImpactedDependencyName:    componentName,
 		ImpactedDependencyVersion: affectedVersion,
@@ -211,7 +247,7 @@ func buildFixDetails(componentName, affectedVersion, fixVersion string, tech tec
 			{
 				Name:      componentName,
 				Version:   affectedVersion,
-				Evidences: evidences,
+				Evidences: buildEvidences(descriptorPaths),
 			},
 		},
 	}
@@ -244,13 +280,17 @@ func buildPRBody(repository utils.Repository, componentName, affectedVersion, fi
 }
 
 func buildComponentRows(componentName, affectedVersion string, descriptorPaths []string) []formats.ComponentRow {
+	return []formats.ComponentRow{{
+		Name:      componentName,
+		Version:   affectedVersion,
+		Evidences: buildEvidences(descriptorPaths),
+	}}
+}
+
+func buildEvidences(descriptorPaths []string) []formats.Location {
 	evidences := make([]formats.Location, len(descriptorPaths))
 	for i, path := range descriptorPaths {
 		evidences[i] = formats.Location{File: path}
 	}
-	return []formats.ComponentRow{{
-		Name:      componentName,
-		Version:   affectedVersion,
-		Evidences: evidences,
-	}}
+	return evidences
 }

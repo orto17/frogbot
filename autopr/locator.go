@@ -7,7 +7,9 @@ import (
 	"strings"
 
 	"github.com/CycloneDX/cyclonedx-go"
+	"github.com/jfrog/jfrog-cli-security/sca/bom/buildinfo/technologies/python"
 	"github.com/jfrog/jfrog-cli-security/sca/bom/xrayplugin"
+	"github.com/jfrog/jfrog-cli-security/utils/formats/cdxutils"
 	"github.com/jfrog/jfrog-cli-security/utils/results"
 	"github.com/jfrog/jfrog-cli-security/utils/techutils"
 	"github.com/jfrog/jfrog-client-go/utils/log"
@@ -58,7 +60,7 @@ func extractComponentMatch(sbom *cyclonedx.BOM, componentName, affectedVersion s
 		return empty, fmt.Errorf("SBOM is empty")
 	}
 
-	rootDirectRefs := collectRootDirectRefs(sbom)
+	bomIndex := cdxutils.NewBOMIndex(sbom, true)
 	seen := map[string]bool{}
 	match := componentMatch{}
 
@@ -74,7 +76,8 @@ func extractComponentMatch(sbom *cyclonedx.BOM, componentName, affectedVersion s
 		if match.purlType == "" {
 			match.purlType = compType
 		}
-		if component.BOMRef != "" && rootDirectRefs[component.BOMRef] {
+		relation := bomIndex.GetComponentRelation(component.BOMRef)
+		if relation == cdxutils.RootRelation || relation == cdxutils.DirectRelation {
 			match.isDirectFromRoot = true
 		}
 
@@ -88,34 +91,6 @@ func extractComponentMatch(sbom *cyclonedx.BOM, componentName, affectedVersion s
 		}
 	}
 	return match, nil
-}
-
-// collectRootDirectRefs returns the set of BOMRefs that appear as direct dependencies of any root/application component.
-func collectRootDirectRefs(sbom *cyclonedx.BOM) map[string]bool {
-	direct := map[string]bool{}
-	if sbom.Dependencies == nil {
-		return direct
-	}
-	rootRefs := map[string]bool{}
-	if sbom.Metadata != nil && sbom.Metadata.Component != nil && sbom.Metadata.Component.BOMRef != "" {
-		rootRefs[sbom.Metadata.Component.BOMRef] = true
-	}
-	if sbom.Components != nil {
-		for _, c := range *sbom.Components {
-			if c.Type == cyclonedx.ComponentTypeApplication && c.BOMRef != "" {
-				rootRefs[c.BOMRef] = true
-			}
-		}
-	}
-	for _, dep := range *sbom.Dependencies {
-		if !rootRefs[dep.Ref] || dep.Dependencies == nil {
-			continue
-		}
-		for _, childRef := range *dep.Dependencies {
-			direct[childRef] = true
-		}
-	}
-	return direct
 }
 
 // resolveTechnology maps a PURL type to a package manager, disambiguating ambiguous
@@ -166,9 +141,6 @@ func componentNamesMatch(input, fromPurl string) bool {
 	if normaliseMaven(input) == normaliseMaven(fromPurl) {
 		return true
 	}
-	normalisePip := func(name string) string {
-		name = strings.ToLower(name)
-		return strings.NewReplacer("_", "-", ".", "-").Replace(name)
-	}
+	normalisePip := python.NormalizePypiName
 	return normalisePip(input) == normalisePip(fromPurl)
 }

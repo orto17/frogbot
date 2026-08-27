@@ -25,12 +25,16 @@ describe('Frogbot Action Tests', () => {
     describe('Auto-PR action contract', () => {
         const repositoryRoot: string = join(__dirname, '..', '..');
 
-        it('Provides a dedicated action manifest', () => {
-            const manifest: string = readFileSync(join(repositoryRoot, 'autopr', 'action.yml'), 'utf8');
+        it('Declares the Auto-PR inputs in the root action manifest', () => {
+            const manifest: string = readFileSync(join(repositoryRoot, 'action.yml'), 'utf8');
 
-            expect(manifest).toContain('default: "auto-pr"');
-            expect(manifest).toContain('default: "latest"');
-            expect(manifest).toContain('main: "../action/lib/main.js"');
+            expect(manifest).toContain('command:');
+            expect(manifest).toContain('component-name:');
+            expect(manifest).toContain('affected-version:');
+            expect(manifest).toContain('fix-version:');
+            expect(manifest).toContain('branch-name:');
+            expect(manifest).toContain('commit-hash:');
+            expect(manifest).toContain('main: "action/lib/main.js"');
         });
 
         it('Passes the repository default branch when branch-name is omitted', () => {
@@ -42,7 +46,7 @@ describe('Frogbot Action Tests', () => {
         it('Invokes the local Auto-PR action in CI', () => {
             const workflow: string = readFileSync(join(repositoryRoot, '.github', 'workflows', 'action-test.yml'), 'utf8');
 
-            expect(workflow).toContain('uses: ./autopr');
+            expect(workflow).toContain('uses: ./');
         });
     });
 

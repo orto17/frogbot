@@ -648,7 +648,6 @@ func removeCredentialsFromUrlIfNeeded(url string) string {
 	return clientutils.RemoveCredentials(url, matchedResult)
 }
 
-// SnapshotUntrackedFiles returns the paths that are currently untracked in the worktree.
 func SnapshotUntrackedFiles(workspaceDir string) (map[string]struct{}, error) {
 	localRepo, err := git.PlainOpen(workspaceDir)
 	if err != nil {
@@ -672,8 +671,6 @@ func SnapshotUntrackedFiles(workspaceDir string) (map[string]struct{}, error) {
 	return untrackedFiles, nil
 }
 
-// CleanUntrackedFiles removes only files that became untracked after the supplied snapshot,
-// so package-manager side effects don't leak into the fix commit without deleting pre-existing work.
 func CleanUntrackedFiles(workspaceDir string, untrackedFilesBefore map[string]struct{}) error {
 	untrackedFilesAfter, err := SnapshotUntrackedFiles(workspaceDir)
 	if err != nil {

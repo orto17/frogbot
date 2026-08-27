@@ -12,7 +12,7 @@ import (
 )
 
 func makeComponent(purl string, locations ...string) cyclonedx.Component {
-	c := cyclonedx.Component{PackageURL: purl, BOMRef: purl}
+	c := cyclonedx.Component{Type: cyclonedx.ComponentTypeLibrary, PackageURL: purl, BOMRef: purl}
 	if len(locations) > 0 {
 		occurrences := make([]cyclonedx.EvidenceOccurrence, len(locations))
 		for i, loc := range locations {
@@ -81,14 +81,67 @@ func TestExtractComponentMatch(t *testing.T) {
 		},
 		{
 			name: "transitive component",
-			sbom: bomWithDirect([]string{"other"}, []cyclonedx.Component{
-				makeComponent("pkg:maven/com.example/lib@1.0.0", "pom.xml"),
-			}),
+			sbom: func() *cyclonedx.BOM {
+				dummyRoot := techutils.ToPackageRef("root", "", "")
+				applicationRef := "pkg:generic/application"
+				parentRef := "pkg:maven/com.example/parent@1.0.0"
+				targetRef := "pkg:maven/com.example/lib@1.0.0"
+				rootDependencies := []string{applicationRef}
+				applicationDependencies := []string{parentRef}
+				parentDependencies := []string{targetRef}
+				emptyDependencies := []string{}
+				components := []cyclonedx.Component{
+					makeComponent(applicationRef),
+					makeComponent(parentRef),
+					makeComponent(targetRef, "pom.xml"),
+				}
+				dependencies := []cyclonedx.Dependency{
+					{Ref: dummyRoot, Dependencies: &rootDependencies},
+					{Ref: applicationRef, Dependencies: &applicationDependencies},
+					{Ref: parentRef, Dependencies: &parentDependencies},
+					{Ref: targetRef, Dependencies: &emptyDependencies},
+				}
+				return &cyclonedx.BOM{
+					Metadata:     &cyclonedx.Metadata{Component: &cyclonedx.Component{BOMRef: dummyRoot}},
+					Components:   &components,
+					Dependencies: &dependencies,
+				}
+			}(),
 			componentName:   "com.example/lib",
 			affectedVersion: "1.0.0",
 			expectedPaths:   []string{"pom.xml"},
 			expectedPurl:    "maven",
 			expectedDirect:  false,
+		},
+		{
+			name: "direct component below Xray-Lib dummy root",
+			sbom: func() *cyclonedx.BOM {
+				dummyRoot := techutils.ToPackageRef("root", "", "")
+				applicationRef := "pkg:generic/application"
+				targetRef := "pkg:maven/com.example/lib@1.0.0"
+				applicationDependencies := []string{targetRef}
+				rootDependencies := []string{applicationRef}
+				emptyDependencies := []string{}
+				components := []cyclonedx.Component{
+					makeComponent(applicationRef),
+					makeComponent(targetRef, "pom.xml"),
+				}
+				dependencies := []cyclonedx.Dependency{
+					{Ref: dummyRoot, Dependencies: &rootDependencies},
+					{Ref: applicationRef, Dependencies: &applicationDependencies},
+					{Ref: targetRef, Dependencies: &emptyDependencies},
+				}
+				return &cyclonedx.BOM{
+					Metadata:     &cyclonedx.Metadata{Component: &cyclonedx.Component{BOMRef: dummyRoot}},
+					Components:   &components,
+					Dependencies: &dependencies,
+				}
+			}(),
+			componentName:   "com.example/lib",
+			affectedVersion: "1.0.0",
+			expectedPaths:   []string{"pom.xml"},
+			expectedPurl:    "maven",
+			expectedDirect:  true,
 		},
 		{
 			name: "component not found",
@@ -201,5 +254,6 @@ func TestResolveTechnology_PnpmDetectedFromDescriptor(t *testing.T) {
 func TestComponentNamesMatch(t *testing.T) {
 	assert.True(t, componentNamesMatch("com.example:lib", "com.example/lib"))
 	assert.True(t, componentNamesMatch("Py_JWT", "py.jwt"))
+	assert.True(t, componentNamesMatch("foo__bar", "foo-bar"))
 	assert.False(t, componentNamesMatch("lodash", "underscore"))
 }

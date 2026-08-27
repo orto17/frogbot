@@ -57,11 +57,12 @@ jobs:
           chmod +x "${tool_dir}/frogbot"
           touch "${tool_dir}.complete"
       - name: Invoke local Auto-PR action
-        uses: ./autopr
+        uses: ./
         env:
           JF_URL: https://example.jfrog.io
           JF_GIT_TOKEN: smoke-test-token
         with:
+          command: auto-pr
           version: 0.0.0-test
           component-name: example
           affected-version: 1.0.0

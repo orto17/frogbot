@@ -38,9 +38,6 @@ const (
 	createAutoFixPrConfigNameInProfile = "Create automated fixes"
 )
 
-// supportedAutoFixTechnologies gates which technologies scan-repository will try to fix.
-// When you add a technology here, also confirm it is handled by
-// securitypkgupdaters.GetCompatiblePackageUpdater (the same factory used by the auto-pr command).
 var supportedAutoFixTechnologies = []techutils.Technology{
 	techutils.Npm,
 	techutils.Maven,
@@ -407,8 +404,6 @@ func (sr *ScanRepositoryCmd) openAggregatedPullRequest(repository *utils.Reposit
 }
 
 func (sr *ScanRepositoryCmd) cleanNewFilesMissingInRemote() error {
-	// Scan-repository operates in a disposable clone, so every untracked file in this
-	// workspace was created by the scan or package updater.
 	return utils.CleanUntrackedFiles(sr.baseWd, nil)
 }
 
