@@ -40,7 +40,7 @@ type autoPrGitManager interface {
 	IsClean() (bool, error)
 	CreateBranchAndCheckout(string, bool) error
 	GenerateCommitMessage(string, string) string
-	AddAllAndCommit(string, string) error
+	AddTrackedAndCommit(string, string) error
 	Push(bool, string) error
 	GeneratePullRequestTitle(string, string) string
 }
@@ -49,19 +49,18 @@ type AutoPrCmd struct {
 	newGitManager       func(utils.Repository) (autoPrGitManager, error)
 	findDescriptorPaths func(string, string, string) ([]string, techutils.Technology, bool, error)
 	runUpdater          func(string, string, string, techutils.Technology, bool, []string) error
-	createPullRequest   func(utils.Repository, string, string, string, string) error
+	createPullRequest   func(utils.Repository, string, string, string, string, []string) error
 }
 
 type autoPrRun struct {
-	componentName        string
-	affectedVersion      string
-	fixVersion           string
-	baseBranch           string
-	fixBranchName        string
-	workspaceDir         string
-	descriptorPaths      []string
-	tech                 techutils.Technology
-	untrackedFilesBefore map[string]struct{}
+	componentName   string
+	affectedVersion string
+	fixVersion      string
+	baseBranch      string
+	fixBranchName   string
+	workspaceDir    string
+	descriptorPaths []string
+	tech            techutils.Technology
 }
 
 func (a *AutoPrCmd) Run(repository utils.Repository, client vcsclient.VcsClient) error {
@@ -94,14 +93,20 @@ func (a *AutoPrCmd) initializeGitManager(repository utils.Repository) (autoPrGit
 	}
 	gitManager, err := utils.NewGitManager().
 		SetAuth(repository.Params.Git.Username, repository.Params.Git.Token).
-		SetLocalRepositoryAndRemoteName()
+		SetRemoteGitUrl(repository.Params.Git.RepositoryCloneUrl)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize git manager: %w", err)
 	}
+	var commitMessageTemplate, branchNameTemplate, prTitleTemplate string
+	if repository.ConfigProfile != nil {
+		commitMessageTemplate = repository.ConfigProfile.FrogbotConfig.CommitMessageTemplate
+		branchNameTemplate = repository.ConfigProfile.FrogbotConfig.BranchNameTemplate
+		prTitleTemplate = repository.ConfigProfile.FrogbotConfig.PrTitleTemplate
+	}
 	customTemplates, err := utils.LoadCustomTemplates(
-		repository.ConfigProfile.FrogbotConfig.CommitMessageTemplate,
-		repository.ConfigProfile.FrogbotConfig.BranchNameTemplate,
-		repository.ConfigProfile.FrogbotConfig.PrTitleTemplate,
+		commitMessageTemplate,
+		branchNameTemplate,
+		prTitleTemplate,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load custom templates: %w", err)
@@ -135,10 +140,6 @@ func (a *AutoPrCmd) prepareRun(run *autoPrRun, gitManager autoPrGitManager) erro
 	if !isClean {
 		return errors.New("auto-pr requires a clean worktree; commit, stash, or remove local changes before running it")
 	}
-	run.untrackedFilesBefore, err = utils.SnapshotUntrackedFiles(run.workspaceDir)
-	if err != nil {
-		return fmt.Errorf("failed to snapshot untracked files before dependency analysis: %w", err)
-	}
 	locate := a.findDescriptorPaths
 	if locate == nil {
 		locate = findDescriptorPaths
@@ -155,7 +156,9 @@ func (a *AutoPrCmd) prepareRun(run *autoPrRun, gitManager autoPrGitManager) erro
 		return fmt.Errorf("could not determine package manager for component '%s@%s'", run.componentName, run.affectedVersion)
 	}
 	if !isDirect {
-		return fmt.Errorf("component '%s@%s' is a transitive dependency; auto-pr only supports direct dependencies", run.componentName, run.affectedVersion)
+		return &ErrAutoPrSkipped{Reason: fmt.Sprintf(
+			"component '%s@%s' is a transitive dependency; auto-pr only supports direct dependencies",
+			run.componentName, run.affectedVersion)}
 	}
 	return nil
 }
@@ -171,11 +174,8 @@ func (a *AutoPrCmd) applyFixAndCreatePullRequest(run autoPrRun, repository utils
 	if err := update(run.componentName, run.affectedVersion, run.fixVersion, run.tech, true, run.descriptorPaths); err != nil {
 		return err
 	}
-	if err := utils.CleanUntrackedFiles(run.workspaceDir, run.untrackedFilesBefore); err != nil {
-		return fmt.Errorf("failed to clean updater-created files from '%s': %w", run.workspaceDir, err)
-	}
 	commitMessage := gitManager.GenerateCommitMessage(run.componentName, run.fixVersion)
-	if err := gitManager.AddAllAndCommit(commitMessage, run.componentName); err != nil {
+	if err := gitManager.AddTrackedAndCommit(commitMessage, run.componentName); err != nil {
 		var errNoChanges *utils.ErrNothingToCommit
 		if errors.As(err, &errNoChanges) {
 			log.Info(err.Error())
@@ -189,15 +189,13 @@ func (a *AutoPrCmd) applyFixAndCreatePullRequest(run autoPrRun, repository utils
 	log.Info(fmt.Sprintf("Branch '%s' pushed to origin", run.fixBranchName))
 
 	prTitle := gitManager.GeneratePullRequestTitle(run.componentName, run.fixVersion)
-	prBody := buildPRBody(repository, run.componentName, run.affectedVersion, run.fixVersion, run.tech, run.descriptorPaths)
+	prBody, extraComments := buildPRBody(repository, run.componentName, run.affectedVersion, run.fixVersion, run.tech, run.descriptorPaths)
 	log.Info(fmt.Sprintf("Creating pull request from '%s' to '%s'", run.fixBranchName, run.baseBranch))
 	if a.createPullRequest != nil {
-		if err := a.createPullRequest(repository, run.fixBranchName, run.baseBranch, prTitle, prBody); err != nil {
+		if err := a.createPullRequest(repository, run.fixBranchName, run.baseBranch, prTitle, prBody, extraComments); err != nil {
 			return fmt.Errorf("failed to create pull request: %w", err)
 		}
-	} else if err := client.CreatePullRequest(context.Background(),
-		repository.Params.Git.RepoOwner, repository.Params.Git.RepoName,
-		run.fixBranchName, run.baseBranch, prTitle, prBody); err != nil {
+	} else if err := createPullRequestWithComments(client, repository, run.fixBranchName, run.baseBranch, prTitle, prBody, extraComments); err != nil {
 		return fmt.Errorf("failed to create pull request: %w", err)
 	}
 	log.Info("Pull request created successfully")
@@ -255,7 +253,7 @@ func buildFixDetails(componentName, affectedVersion, fixVersion string, tech tec
 
 // buildPRBody reuses the standard fix-PR content produced by scan-repository so auto-pr messages
 // stay consistent with the rest of Frogbot.
-func buildPRBody(repository utils.Repository, componentName, affectedVersion, fixVersion string, tech techutils.Technology, descriptorPaths []string) string {
+func buildPRBody(repository utils.Repository, componentName, affectedVersion, fixVersion string, tech techutils.Technology, descriptorPaths []string) (string, []string) {
 	writer := repository.OutputWriter
 	if writer == nil {
 		writer = outputwriter.GetCompatibleOutputWriter(repository.Params.Git.GitProvider, false)
@@ -272,11 +270,28 @@ func buildPRBody(repository utils.Repository, componentName, affectedVersion, fi
 		ImpactPaths:   [][]formats.ComponentRow{{rootRow, componentRow}},
 		Technology:    tech,
 	}
-	description, _ := utils.GenerateFixPullRequestDetails([]formats.VulnerabilityOrViolationRow{row}, "", writer)
+	description, extraComments := utils.GenerateFixPullRequestDetails([]formats.VulnerabilityOrViolationRow{row}, "", writer)
 	if commitHash := os.Getenv(commitHashEnv); commitHash != "" {
 		description += outputwriter.MarkdownComment(fmt.Sprintf("Scanned commit: %s", commitHash))
 	}
-	return description
+	return description, extraComments
+}
+
+func createPullRequestWithComments(client vcsclient.VcsClient, repository utils.Repository, sourceBranch, targetBranch, title, body string, extraComments []string) error {
+	created, err := client.CreatePullRequestDetailed(context.Background(),
+		repository.Params.Git.RepoOwner, repository.Params.Git.RepoName,
+		sourceBranch, targetBranch, title, body)
+	if err != nil {
+		return err
+	}
+	for _, comment := range extraComments {
+		if err = client.AddPullRequestComment(context.Background(),
+			repository.Params.Git.RepoOwner, repository.Params.Git.RepoName,
+			comment, created.Number); err != nil {
+			return fmt.Errorf("failed to post overflow comment: %w", err)
+		}
+	}
+	return nil
 }
 
 func buildComponentRows(componentName, affectedVersion string, descriptorPaths []string) []formats.ComponentRow {

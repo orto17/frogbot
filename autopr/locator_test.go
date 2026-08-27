@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	cyclonedx "github.com/CycloneDX/cyclonedx-go"
+	"github.com/jfrog/jfrog-cli-security/utils/formats/cdxutils"
 	"github.com/jfrog/jfrog-cli-security/utils/techutils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -65,6 +66,18 @@ func TestExtractComponentMatch(t *testing.T) {
 			componentName:   "lodash",
 			affectedVersion: "4.17.20",
 			expectedPaths:   []string{"package.json"},
+			expectedPurl:    "npm",
+			expectedDirect:  true,
+		},
+		{
+			name: "npm names are matched exactly",
+			sbom: bomWithDirect([]string{"pkg:npm/foo_bar@1.0.0", "pkg:npm/foo-bar@1.0.0"}, []cyclonedx.Component{
+				makeComponent("pkg:npm/foo_bar@1.0.0", "underscore/package.json"),
+				makeComponent("pkg:npm/foo-bar@1.0.0", "hyphen/package.json"),
+			}),
+			componentName:   "foo_bar",
+			affectedVersion: "1.0.0",
+			expectedPaths:   []string{"underscore/package.json"},
 			expectedPurl:    "npm",
 			expectedDirect:  true,
 		},
@@ -141,6 +154,45 @@ func TestExtractComponentMatch(t *testing.T) {
 			affectedVersion: "1.0.0",
 			expectedPaths:   []string{"pom.xml"},
 			expectedPurl:    "maven",
+			expectedDirect:  true,
+		},
+		{
+			name: "mixed direct and transitive occurrences include only direct evidence",
+			sbom: func() *cyclonedx.BOM {
+				directRef := "target-direct"
+				transitiveRef := "target-transitive"
+				parentRef := "parent"
+				rootDependencies := []string{directRef, parentRef}
+				parentDependencies := []string{transitiveRef}
+				direct := makeComponent("pkg:npm/example@1.0.0", "direct/package.json")
+				direct.BOMRef = directRef
+				direct.Properties = &[]cyclonedx.Property{{
+					Name: cdxutils.JfrogRelationProperty, Value: string(cdxutils.DirectRelation),
+				}}
+				transitive := makeComponent("pkg:npm/example@1.0.0", "transitive/package.json")
+				transitive.BOMRef = transitiveRef
+				transitive.Properties = &[]cyclonedx.Property{{
+					Name: cdxutils.JfrogRelationProperty, Value: string(cdxutils.TransitiveRelation),
+				}}
+				components := []cyclonedx.Component{
+					direct,
+					transitive,
+					{Type: cyclonedx.ComponentTypeLibrary, BOMRef: parentRef},
+				}
+				dependencies := []cyclonedx.Dependency{
+					{Ref: "root", Dependencies: &rootDependencies},
+					{Ref: parentRef, Dependencies: &parentDependencies},
+				}
+				return &cyclonedx.BOM{
+					Metadata:     &cyclonedx.Metadata{Component: &cyclonedx.Component{BOMRef: "root"}},
+					Components:   &components,
+					Dependencies: &dependencies,
+				}
+			}(),
+			componentName:   "example",
+			affectedVersion: "1.0.0",
+			expectedPaths:   []string{"direct/package.json"},
+			expectedPurl:    "npm",
 			expectedDirect:  true,
 		},
 		{
@@ -252,8 +304,9 @@ func TestResolveTechnology_PnpmDetectedFromDescriptor(t *testing.T) {
 }
 
 func TestComponentNamesMatch(t *testing.T) {
-	assert.True(t, componentNamesMatch("com.example:lib", "com.example/lib"))
-	assert.True(t, componentNamesMatch("Py_JWT", "py.jwt"))
-	assert.True(t, componentNamesMatch("foo__bar", "foo-bar"))
-	assert.False(t, componentNamesMatch("lodash", "underscore"))
+	assert.True(t, componentNamesMatch("com.example:lib", "com.example/lib", "maven"))
+	assert.True(t, componentNamesMatch("Py_JWT", "py.jwt", "pypi"))
+	assert.True(t, componentNamesMatch("foo__bar", "foo-bar", "pypi"))
+	assert.False(t, componentNamesMatch("foo_bar", "foo-bar", "npm"))
+	assert.False(t, componentNamesMatch("lodash", "underscore", "npm"))
 }

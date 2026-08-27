@@ -315,6 +315,31 @@ func (gm *GitManager) AddAllAndCommit(commitMessage string, impactedDependencyNa
 	return gm.commit(commitMessage)
 }
 
+func (gm *GitManager) AddTrackedAndCommit(commitMessage, impactedDependencyName string) error {
+	worktree, err := gm.localGitRepository.Worktree()
+	if err != nil {
+		return err
+	}
+	status, err := worktree.Status()
+	if err != nil {
+		return err
+	}
+	hasTrackedChanges := false
+	for fileName, fileStatus := range status {
+		if fileStatus.Worktree == git.Untracked || fileStatus.Staging == git.Added {
+			continue
+		}
+		if _, err = worktree.Add(fileName); err != nil {
+			return err
+		}
+		hasTrackedChanges = true
+	}
+	if !hasTrackedChanges {
+		return &ErrNothingToCommit{PackageName: impactedDependencyName}
+	}
+	return gm.commit(commitMessage)
+}
+
 func (gm *GitManager) addAll() error {
 	worktree, err := gm.localGitRepository.Worktree()
 	if err != nil {
@@ -680,7 +705,7 @@ func CleanUntrackedFiles(workspaceDir string, untrackedFilesBefore map[string]st
 		if _, existedBefore := untrackedFilesBefore[relativeFilePath]; existedBefore {
 			continue
 		}
-		log.Debug(fmt.Sprintf("Untracking file '%s' that was created locally during the scan/fix process", relativeFilePath))
+		log.Debug(fmt.Sprintf("Removing untracked file '%s'", relativeFilePath))
 		if deletionErr := os.Remove(filepath.Join(workspaceDir, relativeFilePath)); deletionErr != nil {
 			err = errors.Join(err, fmt.Errorf("file '%s': %s", relativeFilePath, deletionErr.Error()))
 		}

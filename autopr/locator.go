@@ -61,14 +61,15 @@ func extractComponentMatch(sbom *cyclonedx.BOM, componentName, affectedVersion s
 	}
 
 	bomIndex := cdxutils.NewBOMIndex(sbom, true)
-	seen := map[string]bool{}
 	match := componentMatch{}
+	var directPaths, transitivePaths []string
+	directSeen, transitiveSeen := map[string]bool{}, map[string]bool{}
 
 	for _, component := range *sbom.Components {
 		compName, compVersion, compType := techutils.SplitPackageURL(component.PackageURL)
 		log.Debug(fmt.Sprintf("Inspecting SBOM component: %s@%s (type: %s)", compName, compVersion, compType))
 
-		if !componentNamesMatch(componentName, compName) || compVersion != affectedVersion {
+		if !componentNamesMatch(componentName, compName, compType) || compVersion != affectedVersion {
 			continue
 		}
 		log.Debug(fmt.Sprintf("Matched component '%s@%s' — checking evidence occurrences", compName, compVersion))
@@ -77,18 +78,34 @@ func extractComponentMatch(sbom *cyclonedx.BOM, componentName, affectedVersion s
 			match.purlType = compType
 		}
 		relation := bomIndex.GetComponentRelation(component.BOMRef)
-		if relation == cdxutils.RootRelation || relation == cdxutils.DirectRelation {
+		isDirect := relation == cdxutils.RootRelation || relation == cdxutils.DirectRelation
+		if isDirect {
 			match.isDirectFromRoot = true
 		}
 
 		for _, location := range results.CdxEvidencesToLocations(component) {
-			if location.File == "" || seen[location.File] {
+			if location.File == "" {
 				continue
 			}
-			seen[location.File] = true
-			match.descriptorPaths = append(match.descriptorPaths, location.File)
+			if isDirect {
+				if directSeen[location.File] {
+					continue
+				}
+				directSeen[location.File] = true
+				directPaths = append(directPaths, location.File)
+			} else {
+				if transitiveSeen[location.File] {
+					continue
+				}
+				transitiveSeen[location.File] = true
+				transitivePaths = append(transitivePaths, location.File)
+			}
 			log.Debug(fmt.Sprintf("Found descriptor: %s", location.File))
 		}
+	}
+	match.descriptorPaths = directPaths
+	if !match.isDirectFromRoot {
+		match.descriptorPaths = transitivePaths
 	}
 	return match, nil
 }
@@ -134,13 +151,13 @@ func isPnpmWorkspace(workspaceDir string, descriptorPaths []string) bool {
 
 // componentNamesMatch compares a user-supplied component name with a PURL name.
 // Maven coordinates may use ":" or "/"; PyPI names are case-insensitive and treat "-", "_", "." as equivalent.
-func componentNamesMatch(input, fromPurl string) bool {
-	normaliseMaven := func(name string) string {
-		return strings.ReplaceAll(name, ":", "/")
+func componentNamesMatch(input, fromPurl, purlType string) bool {
+	switch strings.ToLower(purlType) {
+	case techutils.Pypi:
+		return python.NormalizePypiName(input) == python.NormalizePypiName(fromPurl)
+	case techutils.Maven.String():
+		return strings.ReplaceAll(input, ":", "/") == strings.ReplaceAll(fromPurl, ":", "/")
+	default:
+		return input == fromPurl
 	}
-	if normaliseMaven(input) == normaliseMaven(fromPurl) {
-		return true
-	}
-	normalisePip := python.NormalizePypiName
-	return normalisePip(input) == normalisePip(fromPurl)
 }
