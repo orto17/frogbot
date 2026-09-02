@@ -11,9 +11,7 @@ import (
 	"github.com/jfrog/froggit-go/vcsclient"
 	securitypkgupdaters "github.com/jfrog/jfrog-cli-security/remediation/sca/packageupdaters"
 	"github.com/jfrog/jfrog-cli-security/utils/formats"
-	"github.com/jfrog/jfrog-cli-security/utils/results"
 	"github.com/jfrog/jfrog-cli-security/utils/techutils"
-	"github.com/jfrog/jfrog-cli-security/utils/xsc"
 	"github.com/jfrog/jfrog-client-go/utils/log"
 
 	"github.com/jfrog/frogbot/v3/utils"
@@ -25,8 +23,6 @@ const (
 	affectedVersionEnv = "JF_AFFECTED_VERSION"
 	fixVersionEnv      = "JF_FIX_VERSION"
 	commitHashEnv      = "JF_COMMIT_HASH"
-
-	analyticsAutoPrScanType = "auto-pr"
 )
 
 // ErrAutoPrSkipped is returned when auto-pr cannot proceed but the situation is not fatal
@@ -76,31 +72,19 @@ type autoPrRun struct {
 	tech            techutils.Technology
 }
 
-func (a *AutoPrCmd) Run(repository utils.Repository, client vcsclient.VcsClient) (err error) {
+func (a *AutoPrCmd) Run(repository utils.Repository, client vcsclient.VcsClient) error {
 	run := autoPrRun{
 		componentName:   os.Getenv(componentNameEnv),
 		affectedVersion: os.Getenv(affectedVersionEnv),
 		fixVersion:      os.Getenv(fixVersionEnv),
 		baseBranch:      repository.Params.Git.Branches[0],
 	}
-	if err = validateInputs(run.componentName, run.affectedVersion, run.fixVersion); err != nil {
+	if err := validateInputs(run.componentName, run.affectedVersion, run.fixVersion); err != nil {
 		return err
 	}
 	log.Info(fmt.Sprintf("Starting auto-pr for component '%s' (%s → %s) in %s/%s",
 		run.componentName, run.affectedVersion, run.fixVersion,
 		repository.Params.Git.RepoOwner, repository.Params.Git.RepoName))
-
-	event := utils.CreateScanEvent(&repository.Server, nil, analyticsAutoPrScanType)
-	multiScanId, startTime := xsc.SendNewScanEvent(repository.Params.XrayVersion, repository.Params.XscVersion, &repository.Server, event,
-		repository.Params.JFrogPlatform.JFrogProjectKey)
-	defer func() {
-		resultsContext := &results.ResultContext{
-			ProjectKey:           repository.Params.JFrogPlatform.JFrogProjectKey,
-			GitRepoHttpsCloneUrl: repository.Params.Git.RepositoryCloneUrl,
-		}
-		xsc.SendScanEndedEvent(repository.Params.XrayVersion, repository.Params.XscVersion, &repository.Server,
-			multiScanId, startTime, 0, resultsContext, []string{analyticsAutoPrScanType}, "", err)
-	}()
 
 	gitManager, err := a.initializeGitManager(repository)
 	if err != nil {
