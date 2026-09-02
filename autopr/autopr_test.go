@@ -145,9 +145,6 @@ func TestRun_ComponentBranches(t *testing.T) {
 	}
 }
 
-// TestRun_UnsupportedTechnologyFinishesWithoutError ensures that when the resolved technology has
-// no compatible package updater, auto-pr logs a warning and finishes successfully instead of
-// failing the action, and never attempts to create a branch or apply a fix.
 func TestRun_UnsupportedTechnologyFinishesWithoutError(t *testing.T) {
 	workspaceDir := createCleanTestRepository(t, map[string]string{"yarn.lock": ""})
 	t.Chdir(workspaceDir)
