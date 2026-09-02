@@ -145,6 +145,25 @@ func TestRun_ComponentBranches(t *testing.T) {
 	}
 }
 
+// TestRun_UnsupportedTechnologyFinishesWithoutError ensures that when the resolved technology has
+// no compatible package updater, auto-pr logs a warning and finishes successfully instead of
+// failing the action, and never attempts to create a branch or apply a fix.
+func TestRun_UnsupportedTechnologyFinishesWithoutError(t *testing.T) {
+	workspaceDir := createCleanTestRepository(t, map[string]string{"yarn.lock": ""})
+	t.Chdir(workspaceDir)
+	setAutoPrInputs(t)
+	gitManager := &fakeAutoPrGitManager{clean: true, fixBranchName: "fix"}
+	cmd := &AutoPrCmd{
+		newGitManager: func(utils.Repository) (autoPrGitManager, error) { return gitManager, nil },
+		findDescriptorPaths: func(_, _, _ string) ([]string, techutils.Technology, bool, error) {
+			return []string{"yarn.lock"}, techutils.Yarn, true, nil
+		},
+	}
+
+	require.NoError(t, cmd.Run(testAutoPrRepository(), nil))
+	assert.NotContains(t, gitManager.calls, "create-branch")
+}
+
 func TestInitializeGitManager_WithNilConfigProfileAndConfiguredRemote(t *testing.T) {
 	workspaceDir := t.TempDir()
 	repo, err := git.PlainInit(workspaceDir, false)
