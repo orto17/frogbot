@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/jfrog/froggit-go/vcsclient"
@@ -32,6 +33,14 @@ type ErrAutoPrSkipped struct {
 
 func (e *ErrAutoPrSkipped) Error() string {
 	return fmt.Sprintf("auto-pr skipped: %s", e.Reason)
+}
+
+type errUnsupportedTechnology struct {
+	tech techutils.Technology
+}
+
+func (e *errUnsupportedTechnology) Error() string {
+	return fmt.Sprintf("no package updater is available for technology '%s'", e.tech)
 }
 
 type autoPrGitManager interface {
@@ -82,6 +91,13 @@ func (a *AutoPrCmd) Run(repository utils.Repository, client vcsclient.VcsClient)
 		return err
 	}
 	if err = a.prepareRun(&run, gitManager); err != nil {
+		var unsupported *errUnsupportedTechnology
+		if errors.As(err, &unsupported) {
+			log.Warn(fmt.Sprintf(
+				"Skipping auto-pr for component '%s@%s': no package updater is implemented for technology '%s'. Supported technologies: %v",
+				run.componentName, run.affectedVersion, unsupported.tech, securitypkgupdaters.SupportedFixTechnologies))
+			return nil
+		}
 		return err
 	}
 	return a.applyFixAndCreatePullRequest(run, repository, client, gitManager)
@@ -154,6 +170,9 @@ func (a *AutoPrCmd) prepareRun(run *autoPrRun, gitManager autoPrGitManager) erro
 	}
 	if run.tech == techutils.NoTech {
 		return fmt.Errorf("could not determine package manager for component '%s@%s'", run.componentName, run.affectedVersion)
+	}
+	if !slices.Contains(securitypkgupdaters.SupportedFixTechnologies, run.tech) {
+		return &errUnsupportedTechnology{tech: run.tech}
 	}
 	if !isDirect {
 		return &ErrAutoPrSkipped{Reason: fmt.Sprintf(
