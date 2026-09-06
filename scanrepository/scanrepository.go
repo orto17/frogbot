@@ -38,15 +38,6 @@ const (
 	createAutoFixPrConfigNameInProfile = "Create automated fixes"
 )
 
-var supportedAutoFixTechnologies = []techutils.Technology{
-	techutils.Npm,
-	techutils.Maven,
-	techutils.Pip,
-	techutils.Go,
-	techutils.Pnpm,
-	techutils.Nuget,
-}
-
 type ScanRepositoryCmd struct {
 	outputwriter.OutputWriter
 	dryRun          bool
@@ -487,7 +478,7 @@ func (sr *ScanRepositoryCmd) addVulnerabilityToFixVersionsMap(failUponError bool
 		return nil
 	}
 	// TODO remove this check once all existing package managers support fix again
-	if !slices.Contains(supportedAutoFixTechnologies, vulnerability.Technology) {
+	if !slices.Contains(securitypkgupdaters.SupportedFixTechnologies, vulnerability.Technology) {
 		log.Debug(fmt.Sprintf("Auto-fix is currently not supported for '%s' package manager, skipping fix for '%s'", vulnerability.Technology, vulnerability.ImpactedDependencyName))
 		return nil
 	}
