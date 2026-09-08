@@ -278,6 +278,8 @@ func TestResolveTechnology(t *testing.T) {
 		{name: "npm plain", purlType: "npm", expectedTech: techutils.Npm},
 		{name: "npm with pnpm-lock", purlType: "npm", lockfiles: []string{"pnpm-lock.yaml"}, expectedTech: techutils.Pnpm},
 		{name: "npm with pnpm-workspace", purlType: "npm", lockfiles: []string{"pnpm-workspace.yaml"}, expectedTech: techutils.Pnpm},
+		{name: "npm with yarn.lock", purlType: "npm", lockfiles: []string{"yarn.lock"}, expectedTech: techutils.Yarn},
+		{name: "npm with .yarnrc.yml", purlType: "npm", lockfiles: []string{".yarnrc.yml"}, expectedTech: techutils.Yarn},
 		{name: "pypi", purlType: "pypi", expectedTech: techutils.Pip},
 		{name: "conan", purlType: "conan", expectedTech: techutils.Conan},
 		{name: "gibberish", purlType: "unknown-thing", expectedTech: techutils.NoTech},
@@ -301,6 +303,16 @@ func TestResolveTechnology_PnpmDetectedFromDescriptor(t *testing.T) {
 
 	tech := resolveTechnology("npm", root, []string{"packages/app/package.json"})
 	assert.Equal(t, techutils.Pnpm, tech)
+}
+
+func TestResolveTechnology_YarnDetectedFromDescriptor(t *testing.T) {
+	root := t.TempDir()
+	sub := filepath.Join(root, "packages", "app")
+	require.NoError(t, os.MkdirAll(sub, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(sub, "yarn.lock"), []byte(""), 0o600))
+
+	tech := resolveTechnology("npm", root, []string{"packages/app/package.json"})
+	assert.Equal(t, techutils.Yarn, tech)
 }
 
 func TestComponentNamesMatch(t *testing.T) {

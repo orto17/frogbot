@@ -111,14 +111,22 @@ func extractComponentMatch(sbom *cyclonedx.BOM, componentName, affectedVersion s
 }
 
 // resolveTechnology maps a PURL type to a package manager, disambiguating ambiguous
-// types (npm, pypi, maven) by inspecting the workspace.
+// types (npm, pypi, maven) by inspecting the workspace. Npm, pnpm and Yarn all share the
+// "npm" PURL type (techutils.CdxPackageTypeToTechnology deliberately returns NoTech for
+// it), so that case needs its own marker-based disambiguation - checked in the same
+// precedence techutils' own technology detection uses (Yarn/pnpm indicators exclude a
+// directory from Npm's own detection).
 func resolveTechnology(purlType, workspaceDir string, descriptorPaths []string) techutils.Technology {
 	if tech := techutils.CdxPackageTypeToTechnology(purlType); tech != techutils.NoTech {
 		return tech
 	}
 	switch strings.ToLower(purlType) {
 	case string(techutils.Npm):
-		if isPnpmWorkspace(workspaceDir, descriptorPaths) {
+		candidates := npmFamilyCandidateDirs(workspaceDir, descriptorPaths)
+		if isYarnWorkspace(candidates) {
+			return techutils.Yarn
+		}
+		if isPnpmWorkspace(candidates) {
 			return techutils.Pnpm
 		}
 		return techutils.Npm
@@ -130,8 +138,10 @@ func resolveTechnology(purlType, workspaceDir string, descriptorPaths []string) 
 	return techutils.NoTech
 }
 
-// isPnpmWorkspace reports whether the workspace or any descriptor directory carries a pnpm marker.
-func isPnpmWorkspace(workspaceDir string, descriptorPaths []string) bool {
+// npmFamilyCandidateDirs returns workspaceDir plus the directory of each descriptor path,
+// resolving relative paths against workspaceDir - the set of directories worth checking
+// for an npm/pnpm/Yarn marker file.
+func npmFamilyCandidateDirs(workspaceDir string, descriptorPaths []string) []string {
 	candidates := []string{workspaceDir}
 	for _, path := range descriptorPaths {
 		if !filepath.IsAbs(path) {
@@ -139,6 +149,23 @@ func isPnpmWorkspace(workspaceDir string, descriptorPaths []string) bool {
 		}
 		candidates = append(candidates, filepath.Dir(path))
 	}
+	return candidates
+}
+
+// isYarnWorkspace reports whether any candidate directory carries a Yarn marker
+// (yarn.lock / .yarnrc.yml / .yarnrc / .yarn), reusing the same helper jfrog-cli-security's
+// own Yarn detection and the Yarn package updater's workspace-root discovery use.
+func isYarnWorkspace(candidates []string) bool {
+	for _, dir := range candidates {
+		if techutils.DirectoryHasYarnIndicator(dir) {
+			return true
+		}
+	}
+	return false
+}
+
+// isPnpmWorkspace reports whether any candidate directory carries a pnpm marker.
+func isPnpmWorkspace(candidates []string) bool {
 	for _, dir := range candidates {
 		for _, marker := range []string{"pnpm-lock.yaml", "pnpm-workspace.yaml"} {
 			if _, err := os.Stat(filepath.Join(dir, marker)); err == nil {
