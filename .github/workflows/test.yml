@@ -432,6 +432,89 @@ jobs:
           JF_ACCESS_TOKEN: ${{ secrets.PLATFORM_ADMIN_TOKEN }}
           FROGBOT_V3_TESTS_GITLAB_TOKEN: ${{ secrets.FROGBOT_V3_TESTS_GITLAB_TOKEN }}
 
+  bitbucket-cloud-integration:
+    name: Bitbucket Cloud Integration Tests
+    needs: Pretest
+    runs-on: ${{ matrix.os }}-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        os: [ ubuntu, windows, macos ]
+    concurrency:
+      group: bitbucket-cloud-integration-fixture
+      cancel-in-progress: false
+    env:
+      JFROG_CLI_LOG_LEVEL: "DEBUG"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          allow-unsafe-pr-checkout: true
+          persist-credentials: false
+
+      - uses: jfrog/boost@v0
+        with:
+          accept_terms: yes
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: false
+      - name: Go Cache Build & Tests
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~\AppData\Local\go-build
+            ~/Library/Caches/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-${{ hashFiles('**/*.go') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-
+            ${{ runner.os }}-go-
+
+      - name: Run Tests
+        run: go test -tags integration -run 'TestBitbucketCloud_' bitbucket_cloud_test.go integrationutils.go commands.go -v -race -timeout 30m -cover
+        env:
+          JF_URL: ${{ secrets.PLATFORM_URL }}
+          JF_ACCESS_TOKEN: ${{ secrets.PLATFORM_ADMIN_TOKEN }}
+          FROGBOT_V3_TESTS_BITBUCKET_CLOUD_TOKEN: ${{ secrets.FROGBOT_V3_TESTS_BITBUCKET_CLOUD_TOKEN }}
+
+  bitbucket-cloud-integration-cleanup:
+    name: Cleanup Bitbucket Cloud Integration Test Artifacts
+    needs: [ Pretest, bitbucket-cloud-integration ]
+    if: ${{ always() && !cancelled() && needs.Pretest.result != 'skipped' && needs.bitbucket-cloud-integration.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: bitbucket-cloud-integration-fixture
+      cancel-in-progress: false
+    env:
+      JFROG_CLI_LOG_LEVEL: "DEBUG"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          allow-unsafe-pr-checkout: true
+          persist-credentials: false
+
+      - uses: jfrog/boost@v0
+        with:
+          accept_terms: yes
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: false
+
+      - name: Run Cleanup
+        run: go test -tags integration -run TestHelper_CleanupIntegrationTestsArtifactsBitbucketCloud bitbucket_cloud_test.go integrationutils.go commands.go -v
+        env:
+          JF_URL: ${{ secrets.PLATFORM_URL }}
+          JF_ACCESS_TOKEN: ${{ secrets.PLATFORM_ADMIN_TOKEN }}
+          FROGBOT_V3_TESTS_BITBUCKET_CLOUD_TOKEN: ${{ secrets.FROGBOT_V3_TESTS_BITBUCKET_CLOUD_TOKEN }}
+
   bitbucket-server-integration:
     name: Bitbucket Server Integration Tests
     needs: Pretest

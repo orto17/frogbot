@@ -44,9 +44,17 @@ type IntegrationTestDetails struct {
 	GitProvider      string
 	GitProject       string
 	GitUsername      string
+	GitPushUsername  string
 	ApiEndpoint      string
 	PullRequestID    string
 	CustomBranchName string
+}
+
+func (d *IntegrationTestDetails) gitPushUsername() string {
+	if d.GitPushUsername != "" {
+		return d.GitPushUsername
+	}
+	return d.GitUsername
 }
 
 func NewIntegrationTestDetails(token, gitProvider, gitCloneUrl, repoOwner string) *IntegrationTestDetails {
@@ -63,7 +71,7 @@ func NewIntegrationTestDetails(token, gitProvider, gitCloneUrl, repoOwner string
 
 func buildGitManager(t *testing.T, testDetails *IntegrationTestDetails) *utils.GitManager {
 	gitManager, err := utils.NewGitManager().
-		SetAuth(testDetails.GitUsername, testDetails.GitToken).
+		SetAuth(testDetails.gitPushUsername(), testDetails.GitToken).
 		SetRemoteGitUrl(testDetails.GitCloneURL)
 	assert.NoError(t, err)
 	return gitManager
@@ -200,7 +208,7 @@ func runScanRepositoryCmd(t *testing.T, client vcsclient.VcsClient, testDetails 
 	cloneOptions := &git.CloneOptions{
 		URL: testDetails.GitCloneURL,
 		Auth: &githttp.BasicAuth{
-			Username: testDetails.GitUsername,
+			Username: testDetails.gitPushUsername(),
 			Password: testDetails.GitToken,
 		},
 		RemoteName:    "origin",
@@ -270,7 +278,7 @@ func cleanupIntegrationArtifacts(t *testing.T, client vcsclient.VcsClient, testD
 	cloneOptions := &git.CloneOptions{
 		URL: testDetails.GitCloneURL,
 		Auth: &githttp.BasicAuth{
-			Username: testDetails.GitUsername,
+			Username: testDetails.gitPushUsername(),
 			Password: testDetails.GitToken,
 		},
 		RemoteName:    "origin",
@@ -316,6 +324,8 @@ func validateResults(t *testing.T, ctx context.Context, client vcsclient.VcsClie
 		validateAzureComments(t, comments)
 	case *vcsclient.BitbucketServerClient:
 		validateBitbucketServerComments(t, comments)
+	case *vcsclient.BitbucketCloudClient:
+		validateBitbucketCloudComments(t, comments)
 	case *vcsclient.GitLabClient:
 		validateGitLabComments(t, comments)
 	}
@@ -347,6 +357,15 @@ func validateAzureComments(t *testing.T, comments []vcsclient.CommentInfo) {
 func validateBitbucketServerComments(t *testing.T, comments []vcsclient.CommentInfo) {
 	assert.GreaterOrEqual(t, len(comments), expectedNumberOfIssues)
 	assertBannerExists(t, comments, outputwriter.GetSimplifiedTitle(outputwriter.VulnerabilitiesPrBannerSource))
+}
+
+func validateBitbucketCloudComments(t *testing.T, comments []vcsclient.CommentInfo) {
+	assert.True(t, containsCommentMentioning(comments, outputwriter.GetSimplifiedTitle(outputwriter.VulnerabilitiesPrBannerSource)),
+		"expected a PR comment containing the Frogbot banner")
+	assert.True(t, containsCommentMentioning(comments, scanPrTestAddedVulnDependency),
+		"expected a PR comment mentioning the vulnerable dependency "+scanPrTestAddedVulnDependency)
+	assert.True(t, containsCommentMentioning(comments, cveCommentPrefix),
+		"expected a PR comment with CVE findings")
 }
 
 func validateGitLabComments(t *testing.T, comments []vcsclient.CommentInfo) {

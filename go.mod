@@ -140,4 +140,4 @@ require (
 
 // replace github.com/jfrog/jfrog-client-go => github.com/jfrog/jfrog-client-go master
 
-// replace github.com/jfrog/froggit-go => github.com/jfrog/froggit-go master
+replace github.com/jfrog/froggit-go => github.com/jfrog/froggit-go v1.23.2-0.20260909160929-7d982ce8ac90
