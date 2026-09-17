@@ -136,17 +136,14 @@ func resolveTechnology(purlType, workspaceDir string, descriptorPaths []string) 
 	return techutils.NoTech
 }
 
-// isPnpmWorkspace reports whether the workspace or any descriptor directory carries a pnpm marker.
 func isPnpmWorkspace(workspaceDir string, descriptorPaths []string) bool {
 	return hasMarker(workspaceDir, descriptorPaths, "pnpm-lock.yaml", "pnpm-workspace.yaml")
 }
 
-// isYarnWorkspace reports whether the workspace or any descriptor directory carries a yarn marker.
 func isYarnWorkspace(workspaceDir string, descriptorPaths []string) bool {
 	return hasMarker(workspaceDir, descriptorPaths, "yarn.lock", ".yarnrc.yml", ".yarnrc", ".yarn")
 }
 
-// isUvWorkspace reports whether the workspace or any descriptor directory carries a uv marker.
 func isUvWorkspace(workspaceDir string, descriptorPaths []string) bool {
 	return hasMarker(workspaceDir, descriptorPaths, "uv.lock")
 }
