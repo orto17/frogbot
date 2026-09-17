@@ -111,7 +111,7 @@ func extractComponentMatch(sbom *cyclonedx.BOM, componentName, affectedVersion s
 }
 
 // resolveTechnology maps a PURL type to a package manager, disambiguating ambiguous
-// types (npm, pypi, maven) by inspecting the workspace.
+// types (npm, python, maven) by inspecting the workspace.
 func resolveTechnology(purlType, workspaceDir string, descriptorPaths []string) techutils.Technology {
 	if tech := techutils.CdxPackageTypeToTechnology(purlType); tech != techutils.NoTech {
 		return tech
